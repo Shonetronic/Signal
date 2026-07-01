@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SIGNAL — Digital Prototype</title>
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+
+  <!-- ── LOBBY ── -->
+  <div id="lobby">
+    <div class="lobby-title">SIGNAL</div>
+    <div class="lobby-subtitle">WWII TACTICAL CARD GAME — PROTOTYPE</div>
+
+    <!-- Step 1 & 2: Deck selection -->
+    <div id="deck-picker">
+      <div class="picker-label" id="picker-label">PLAYER 1 — CHOOSE YOUR DECK</div>
+      <div class="deck-grid" id="deck-grid">
+        <div class="deck-option" data-deck="aggro">
+          <div class="deck-name">Blitzkrieg</div>
+          <div class="deck-flavor">Fast infantry and tanks. Rush objectives before your opponent can set up.</div>
+          <div class="deck-ap">38 AP</div>
+        </div>
+        <div class="deck-option" data-deck="control">
+          <div class="deck-name">Defensive Line</div>
+          <div class="deck-flavor">Guard units and armor. Lock down objectives and outlast the enemy.</div>
+          <div class="deck-ap">40 AP</div>
+        </div>
+        <div class="deck-option" data-deck="power">
+          <div class="deck-name">Iron Fist</div>
+          <div class="deck-flavor">Heavy tanks and bombers. Overwhelming firepower wins the late game.</div>
+          <div class="deck-ap">47 AP</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Map selection (hidden until both decks chosen) -->
+    <div id="map-picker" style="display:none">
+      <div class="picker-label">CHOOSE MAP</div>
+      <div class="deck-grid" id="map-grid">
+        <div class="deck-option" data-map="normandy">
+          <div class="deck-name">Normandy</div>
+          <div class="deck-flavor">Beach landings. Bocage forest blocks tanks. Naval holds left flank.</div>
+          <div class="deck-ap">Forest · Water · Plains</div>
+        </div>
+        <div class="deck-option" data-map="stalingrad">
+          <div class="deck-name">Stalingrad</div>
+          <div class="deck-flavor">Urban warfare. Volga River seals the right flank — Naval only.</div>
+          <div class="deck-ap">City · Water · Plains</div>
+        </div>
+        <div class="deck-option" data-map="el_alamein">
+          <div class="deck-name">El Alamein</div>
+          <div class="deck-flavor">Open desert. No restrictions — vehicles dominate.</div>
+          <div class="deck-ap">Desert (open)</div>
+        </div>
+        <div class="deck-option" data-map="ardennes">
+          <div class="deck-name">Ardennes</div>
+          <div class="deck-flavor">Dense forest, two corridors. Tanks nearly useless here.</div>
+          <div class="deck-ap">Forest · Plains corridors</div>
+        </div>
+        <div class="deck-option" data-map="kursk">
+          <div class="deck-name">Kursk</div>
+          <div class="deck-flavor">Open center, forest corners. The great tank battle.</div>
+          <div class="deck-ap">Plains · Forest corners</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── WAITING SCREEN (P2 online, waiting for host to start) ── -->
+  <div id="waiting-screen" style="display:none; flex-direction:column; align-items:center; gap:24px; padding:80px 16px;">
+    <div class="lobby-title">SIGNAL</div>
+    <div class="picker-label">WAITING FOR HOST...</div>
+    <div style="font-size:13px; color:#555; text-align:center;">Game will start when the host picks decks and map.</div>
+  </div>
+
+  <!-- ── END GAME OVERLAY ── -->
+  <div id="end-screen" style="display:none;">
+    <div class="end-content">
+      <div class="end-winner" id="end-winner"></div>
+      <div class="end-subtitle">HQ DESTROYED</div>
+      <button class="btn btn-primary" onclick="location.reload()">Play Again</button>
+    </div>
+  </div>
+
+  <!-- ── GAME AREA (hidden until map chosen) ── -->
+  <div id="game-area" style="display:none; flex-direction:column; align-items:center; gap:12px; width:100%;">
+
+    <div class="hq-bar">
+      <span class="hq-label">P2 HQ</span>
+      <span class="hq-hp" id="p2-hq">20</span>
+      <span class="fuel-display" id="p2-fuel">0/6 Fuel</span>
+    </div>
+
+    <div class="board-area">
+      <div class="board" id="board"></div>
+    </div>
+
+    <div class="hq-bar">
+      <span class="hq-label">P1 HQ</span>
+      <span class="hq-hp" id="p1-hq">20</span>
+      <span class="fuel-display" id="p1-fuel">0/6 Fuel</span>
+    </div>
+
+    <div class="controls">
+      <span class="turn-info" id="turn-display">Turn 1 — P1 to play</span>
+      <button class="btn btn-primary" id="btn-end-turn">End Turn</button>
+      <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+    </div>
+
+    <div class="hand-area">
+      <div class="hand-label">YOUR HAND</div>
+      <div class="hand" id="p1-hand"></div>
+    </div>
+
+    <div class="missions-area" id="missions-area"></div>
+
+    <div class="log" id="game-log"></div>
+
+  </div>
+
+  <script type="module" src="./js/game.js"></script>
+
+</body>
+</html>

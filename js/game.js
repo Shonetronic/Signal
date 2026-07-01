@@ -1,0 +1,1055 @@
+import { CARD_BY_ID } from './cards.js';
+import {
+  createInitialState,
+  startOfTurn,
+  endTurn,
+  drawCards,
+  gainFuel,
+  updateObjectiveLevels,
+  checkObjectiveControl,
+  getKeywords,
+  applyHit,
+  maxArmorHits,
+} from './state.js';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js';
+import { pushState, subscribeState } from './firebase.js';
+
+// ── Starter decks ─────────────────────────────────────────────────────────────
+const DECKS = {
+  aggro:   { ids: [61, 1, 34, 70, 71, 38, 46, 69, 59, 60, 3, 6, 7, 8, 12, 18, 49, 51, 19, 22, 76, 73, 25, 24, 81] },
+  control: { ids: [2, 11, 36, 62, 64, 72, 6, 39, 63, 68, 18, 54, 74, 75, 49, 19, 22, 52, 50, 16, 23, 57, 58, 81, 56] },
+  power:   { ids: [9, 65, 41, 67, 86, 42, 13, 6, 78, 73, 17, 18, 49, 22, 76, 51, 19, 55, 84, 23, 23, 25, 25, 56, 58] },
+};
+
+const OBJECTIVE_IDS = [26, 27, 28, 29, 30, 31, 32, 33];
+
+function pickObjectives(mapId) {
+  const slots = MAPS[mapId].objectiveSlots;
+  const shuffled = [...OBJECTIVE_IDS].sort(() => Math.random() - 0.5);
+  const objectives = {};
+  slots.forEach((slot, i) => {
+    objectives[slot] = { cardId: shuffled[i], level: 1 };
+  });
+  return objectives;
+}
+
+// ── Lobby flow ────────────────────────────────────────────────────────────────
+let p1DeckIds = null;
+let p2DeckIds = null;
+let pickerStep = 1;
+
+document.getElementById('deck-grid').addEventListener('click', e => {
+  const option = e.target.closest('.deck-option');
+  if (!option) return;
+  const deck = DECKS[option.dataset.deck];
+  if (!deck) return;
+
+  if (pickerStep === 1) {
+    p1DeckIds = [...deck.ids];
+    pickerStep = 2;
+    document.getElementById('picker-label').textContent = 'PLAYER 2 — CHOOSE YOUR DECK';
+  } else {
+    p2DeckIds = [...deck.ids];
+    pickerStep = 3;
+    document.getElementById('deck-picker').style.display = 'none';
+    document.getElementById('map-picker').style.display = '';
+  }
+});
+
+document.getElementById('map-grid').addEventListener('click', e => {
+  const option = e.target.closest('.deck-option');
+  if (!option || !option.dataset.map) return;
+  startGame(p1DeckIds, p2DeckIds, option.dataset.map);
+});
+
+// ── Online mode ───────────────────────────────────────────────────────────────
+const params  = new URLSearchParams(window.location.search);
+const isOnline = !!params.get('game');
+const gameId   = params.get('game') ?? null;
+const myRole   = params.get('role') ?? null; // 'p1' | 'p2' | null for local play
+let myLastPushId = null;
+
+// ── Game state ────────────────────────────────────────────────────────────────
+let state = null;
+let uiState = "idle";
+let selectedHandCardId = null;
+let pendingAttackerKey = null;
+let attackedThisTurn = new Map(); // tileKey → attack count used this turn
+let pendingCommandId = null;       // card ID of command awaiting a board target
+let gameOver = false;
+
+// ── Start game ────────────────────────────────────────────────────────────────
+function startGame(p1Ids, p2Ids, mapId) {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('game-area').style.display = 'flex';
+
+  state = createInitialState(p1Ids, p2Ids, mapId);
+  state = { ...state, objectives: pickObjectives(mapId) };
+  state = startOfTurn(state);
+
+  const mapName = MAPS[mapId].name;
+  state = { ...state, log: [`Game started on ${mapName} — P1 goes first.`] };
+  appendLog(state.log);
+  redraw();
+
+  if (isOnline) {
+    pushStateIfOnline(state);
+    subscribeState(gameId, remoteState => {
+      if (remoteState._pushId === myLastPushId) return; // filter own echo
+      receiveRemoteState(remoteState);
+    });
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getValidTiles() {
+  const card = CARD_BY_ID[selectedHandCardId];
+  const valid = new Set();
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      const k = tileKey(r, c);
+      if (state.board[k]) continue;
+      const terrain = getTerrain(state.mapId, r, c);
+      if (canPlaceOnTerrain(card, terrain)) valid.add(k);
+    }
+  }
+  return valid;
+}
+
+function getAdjacentKeys(key) {
+  const [r, c] = key.split(',').map(Number);
+  return [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
+    .filter(([row, col]) => row >= 0 && row < 4 && col >= 0 && col < 4)
+    .map(([row, col]) => `${row},${col}`);
+}
+
+function applyMutations(board, mutations) {
+  const newBoard = { ...board };
+  for (const { key: k, newUnit } of mutations) {
+    newBoard[k] = newUnit;
+  }
+  return newBoard;
+}
+
+function redraw() {
+  if (!state) return;
+  renderHQ(state);
+
+  if (uiState === "placing") {
+    renderBoard(state, null, getValidTiles());
+  } else {
+    renderBoard(state, null, null);
+  }
+
+  if (uiState === "targeting" && pendingAttackerKey) {
+    const attackableTargets = getAttackableTargets(state, pendingAttackerKey);
+    const attackableKeys = new Set(attackableTargets.map(t => t.key));
+
+    const attackerTile = document.querySelector(`[data-key="${pendingAttackerKey}"]`);
+    if (attackerTile) attackerTile.classList.add('selected-unit');
+
+    for (const key of attackableKeys) {
+      const el = document.querySelector(`[data-key="${key}"]`);
+      if (el) el.classList.add('targetable');
+    }
+  }
+
+  if (uiState === "command-targeting" && pendingCommandId !== null) {
+    const validKeys = getCommandTargets(pendingCommandId);
+    const ENEMY_CMDS = new Set([16, 20, 79]);
+    const cls = ENEMY_CMDS.has(pendingCommandId) ? 'targetable' : 'cmd-target';
+    for (const key of validKeys) {
+      const el = document.querySelector(`[data-key="${key}"]`);
+      if (el) el.classList.add(cls);
+    }
+  }
+
+  const handRole = myRole ?? state.initiative;
+  renderHand(state[handRole].hand, 'p1-hand', selectedHandCardId);
+
+  // Missions display
+  const activeMissions = state[handRole].missions ?? [];
+  const missionsEl = document.getElementById('missions-area');
+  if (missionsEl) {
+    if (activeMissions.length === 0) {
+      missionsEl.innerHTML = '';
+    } else {
+      missionsEl.innerHTML = '<span class="missions-label">MISSIONS: </span>' +
+        activeMissions.map(m => {
+          const c = CARD_BY_ID[m.cardId];
+          return `<span class="mission-badge">${c?.name ?? '?'} (${m.turnsRemaining}t)</span>`;
+        }).join(' ');
+    }
+  }
+
+  if (isOnline) {
+    const isMyTurn = state.initiative === myRole;
+    document.getElementById('turn-display').textContent = isMyTurn
+      ? `Turn ${state.turn} — YOUR TURN`
+      : `Turn ${state.turn} — WAITING FOR OPPONENT`;
+  }
+}
+
+function commitState(newState, logLines) {
+  state = { ...newState, log: [...(newState.log ?? []), ...(logLines ?? [])] };
+  if (logLines?.length) appendLog(logLines);
+  redraw();
+  pushStateIfOnline(state);
+}
+
+function pushStateIfOnline(s) {
+  if (!isOnline) return;
+  const pushId = `${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+  myLastPushId = pushId;
+  pushState(gameId, { ...s, _pushId: pushId });
+}
+
+// Firebase converts JS arrays to objects with integer keys on retrieval.
+// This restores them to real arrays for all fields that must be arrays.
+function normalizeFirebaseState(raw) {
+  const toArray = v => Array.isArray(v) ? v : Object.values(v ?? {});
+  const fixUnit = u => u ? { ...u, tempKeywords: toArray(u.tempKeywords), grantedKeywords: toArray(u.grantedKeywords) } : u;
+  const fixBoard = b => {
+    if (!b) return {};
+    return Object.fromEntries(Object.entries(b).map(([k, v]) => [k, fixUnit(v)]));
+  };
+  const fixPlayer = p => p ? {
+    ...p,
+    hand:     toArray(p.hand),
+    deck:     toArray(p.deck),
+    missions: toArray(p.missions),
+  } : p;
+  return {
+    ...raw,
+    log:   toArray(raw.log),
+    p1:    fixPlayer(raw.p1),
+    p2:    fixPlayer(raw.p2),
+    board: fixBoard(raw.board),
+  };
+}
+
+function receiveRemoteState(remoteState) {
+  const normalized = normalizeFirebaseState(remoteState);
+  const prevLogLen = state?.log?.length ?? 0;
+  state = normalized;
+  const newEntries = (normalized.log ?? []).slice(prevLogLen);
+  if (newEntries.length) appendLog(newEntries);
+  uiState = 'idle';
+  selectedHandCardId = null;
+  pendingAttackerKey = null;
+  pendingCommandId = null;
+  attackedThisTurn = new Map();
+  redraw();
+}
+
+function showEndScreen(winner) {
+  gameOver = true;
+  document.getElementById('end-winner').textContent = `${winner} WINS`;
+  document.getElementById('end-screen').style.display = 'flex';
+}
+
+function checkWin() {
+  if (state.p1.hq <= 0) { showEndScreen('P2'); return true; }
+  if (state.p2.hq <= 0) { showEndScreen('P1'); return true; }
+  return false;
+}
+
+// ── Hand interaction ──────────────────────────────────────────────────────────
+
+document.getElementById('p1-hand').addEventListener('click', e => {
+  if (gameOver || !state) return;
+  if (isOnline && state.initiative !== myRole) return;
+  const cardEl = e.target.closest('.hand-card');
+  if (!cardEl) return;
+  const cardId = Number(cardEl.dataset.cardId);
+  const card = CARD_BY_ID[cardId];
+  if (!card) return;
+
+  if (selectedHandCardId === cardId) {
+    selectedHandCardId = null;
+    uiState = "idle";
+    redraw();
+    return;
+  }
+
+  if (card.type === 'unit') {
+    const active = state.initiative;
+    if (state[active].fuel < card.cost) {
+      appendLog([`Not enough Fuel for ${card.name} (need ${card.cost}, have ${state[active].fuel})`]);
+      redraw();
+      return;
+    }
+    selectedHandCardId = cardId;
+    uiState = "placing";
+  } else if (card.type === 'command') {
+    const active = state.initiative;
+    if (state[active].fuel < card.cost) {
+      appendLog([`Not enough Fuel for ${card.name} (need ${card.cost}, have ${state[active].fuel})`]);
+      redraw();
+      return;
+    }
+    if (!playInstantCommand(cardId)) {
+      const validTargets = getCommandTargets(cardId);
+      if (validTargets === null) {
+        appendLog([`${card.name}: not yet implemented`]);
+      } else if (validTargets.size > 0) {
+        startCommandTargeting(cardId);
+      } else {
+        appendLog([`${card.name}: no valid targets`]);
+      }
+    }
+    return;
+  } else {
+    const active = state.initiative;
+    if (state[active].fuel < card.cost) { appendLog([`Not enough Fuel`]); redraw(); return; }
+    playMissionCard(cardId);
+  }
+  redraw();
+});
+
+// ── Board interaction ─────────────────────────────────────────────────────────
+
+document.getElementById('board').addEventListener('click', e => {
+  if (gameOver || !state) return;
+  if (isOnline && state.initiative !== myRole) return;
+  const tile = e.target.closest('.tile');
+  if (!tile) return;
+  const clickedKey = tile.dataset.key;
+
+  // PLACING
+  if (uiState === "placing") {
+    if (state.board[clickedKey]) return;
+
+    const active = state.initiative;
+    const card = CARD_BY_ID[selectedHandCardId];
+    const [r, c] = clickedKey.split(',').map(Number);
+    const terrain = getTerrain(state.mapId, r, c);
+
+    if (!canPlaceOnTerrain(card, terrain)) {
+      appendLog([`${card.name} cannot enter ${terrain} terrain`]);
+      return;
+    }
+    // Apply Armored Spearhead discount for Tanks
+    const discount = card.cls === 'Tank' ? Math.min(card.cost, state[active].tempFuelDiscount ?? 0) : 0;
+    const effectiveCost = card.cost - discount;
+
+    if (state[active].fuel < effectiveCost) {
+      appendLog([`Not enough Fuel for ${card.name} (need ${effectiveCost}, have ${state[active].fuel})`]);
+      selectedHandCardId = null;
+      uiState = "idle";
+      redraw();
+      return;
+    }
+
+    const handAfter = [...state[active].hand];
+    const idx = handAfter.indexOf(selectedHandCardId);
+    if (idx !== -1) handAfter.splice(idx, 1);
+
+    const placedUnit = {
+      cardId: selectedHandCardId,
+      owner: active,
+      state: 'normal',
+      armorHits: 0,
+      tempKeywords: [],
+      grantedKeywords: [],
+      tempSideBonus: 0,
+      justPlaced: true,
+    };
+
+    let newState = {
+      ...state,
+      board: { ...state.board, [clickedKey]: placedUnit },
+      [active]: {
+        ...state[active],
+        fuel: state[active].fuel - effectiveCost,
+        hand: handAfter,
+        tempFuelDiscount: (state[active].tempFuelDiscount ?? 0) - discount,
+      },
+    };
+
+    const logLines = [`Placed ${card.name} at ${clickedKey} (${terrain})${discount > 0 ? ` [Armored Spearhead: -${discount} Fuel]` : ''}`];
+    state = { ...newState, log: [...(newState.log ?? []), ...logLines] };
+
+    // Check placement-triggered missions (Deep Strike, Encirclement)
+    const { state: afterPlaceMissions, log: placeMissionLog } = checkActiveMissions(state, active, {});
+    if (placeMissionLog.length > 0) {
+      state = { ...afterPlaceMissions, log: [...(afterPlaceMissions.log ?? []), ...placeMissionLog] };
+      appendLog(placeMissionLog);
+    }
+
+    selectedHandCardId = null;
+
+    const targets = getAttackableTargets(state, clickedKey);
+    if (targets.length > 0) {
+      uiState = "targeting";
+      pendingAttackerKey = clickedKey;
+    } else {
+      uiState = "idle";
+      pendingAttackerKey = null;
+    }
+    appendLog(logLines);
+    redraw();
+    checkWin();
+    pushStateIfOnline(state);
+    return;
+  }
+
+  // TARGETING
+  if (uiState === "targeting") {
+    if (!pendingAttackerKey) return;
+    const targets = getAttackableTargets(state, pendingAttackerKey);
+    if (!targets.some(t => t.key === clickedKey)) return;
+
+    const result = resolveSingleAttack(state, pendingAttackerKey, clickedKey);
+    const newBoard = applyMutations(state.board, result.boardMutations);
+
+    // Overrun bonus: attacker's Overrun flag adds +1 HQ damage per hit that deals damage
+    const attacker = state.initiative;
+    let dmgP1 = result.hqDamageToP1;
+    let dmgP2 = result.hqDamageToP2;
+    const overrunLog = [];
+    if (attacker === 'p1' && dmgP2 > 0 && state.p1.overrun) { dmgP2++; overrunLog.push('Overrun: +1 HQ damage'); }
+    if (attacker === 'p2' && dmgP1 > 0 && state.p2.overrun) { dmgP1++; overrunLog.push('Overrun: +1 HQ damage'); }
+
+    let newState = {
+      ...state,
+      board: newBoard,
+      p1: { ...state.p1, hq: state.p1.hq - dmgP1 },
+      p2: { ...state.p2, hq: state.p2.hq - dmgP2 },
+    };
+
+    const attackerKey = pendingAttackerKey;
+    const attackerUnit = state.board[attackerKey];
+    attackedThisTurn.set(attackerKey, (attackedThisTurn.get(attackerKey) ?? 0) + 1);
+    const attackCount = attackedThisTurn.get(attackerKey);
+    const isDoubleAttack = getKeywords(attackerUnit).includes('Double Attack');
+    const postAttackTargets = getAttackableTargets({ ...state, board: newBoard }, attackerKey);
+
+    // Kill tracking + mission check
+    const wasDestroyed = result.boardMutations.some(m => m.newUnit === null);
+    const missionCtx = {};
+    if (wasDestroyed) {
+      const attackerCls = CARD_BY_ID[attackerUnit.cardId]?.cls;
+      missionCtx.aircraftKill = attackerCls === 'Aircraft';
+      missionCtx.heavyArmorKill = getKeywords(attackerUnit).includes('Heavy Armor');
+      newState = { ...newState, [attacker]: {
+        ...newState[attacker],
+        killsThisTurn: (newState[attacker].killsThisTurn ?? 0) + 1,
+        totalKills: (newState[attacker].totalKills ?? 0) + 1,
+      }};
+    }
+    const { state: afterMissions, log: missionLog } = checkActiveMissions(newState, attacker, missionCtx);
+    newState = afterMissions;
+
+    if (isDoubleAttack && attackCount < 2 && postAttackTargets.length > 0) {
+      uiState = "targeting";
+      pendingAttackerKey = attackerKey;
+    } else {
+      uiState = "idle";
+      pendingAttackerKey = null;
+    }
+
+    commitState(newState, [...result.logEntries, ...overrunLog, ...missionLog]);
+    checkWin();
+    return;
+  }
+
+  // COMMAND TARGETING: resolve targeted command on clicked tile
+  if (uiState === "command-targeting" && pendingCommandId !== null) {
+    const validKeys = getCommandTargets(pendingCommandId);
+    if (!validKeys.has(clickedKey)) return;
+    applyCommandEffect(pendingCommandId, clickedKey);
+    return;
+  }
+
+  // IDLE: select a friendly unit to attack
+  if (uiState === "idle") {
+    const unit = state.board[clickedKey];
+    if (!unit) return;
+    const active = state.initiative;
+    if (unit.owner !== active) return;
+    if (unit.state !== "normal") return;
+    const maxAttacks = getKeywords(unit).includes('Double Attack') ? 2 : 1;
+    if ((attackedThisTurn.get(clickedKey) ?? 0) >= maxAttacks) return;
+
+    const targets = getAttackableTargets(state, clickedKey);
+    if (targets.length === 0) {
+      appendLog([`${CARD_BY_ID[unit.cardId]?.name ?? '?'} at ${clickedKey}: No valid targets`]);
+      return;
+    }
+
+    pendingAttackerKey = clickedKey;
+    uiState = "targeting";
+    redraw();
+    return;
+  }
+});
+
+// ── Objective effects ─────────────────────────────────────────────────────────
+// Called at the start of each player's turn after control is checked.
+// Returns { state, log }.
+function applyObjectiveEffects(s, player) {
+  const log = [];
+  const opp = player === 'p1' ? 'p2' : 'p1';
+
+  for (const [key, obj] of Object.entries(s.objectives)) {
+    if (obj.controller !== player) continue;
+    const card = CARD_BY_ID[obj.cardId];
+    if (!card) continue;
+    const lv = obj.level;
+    if (lv === 0) continue;
+    const nm = card.name;
+
+    switch (obj.cardId) {
+      case 26: { // Factory — fuel; L3+ buffs friendly Tanks; L4 HQ damage
+        const fuel = lv >= 3 ? 2 : 1;
+        s = { ...s, [player]: gainFuel(s[player], fuel) };
+        log.push(`${nm} L${lv}: +${fuel} Fuel`);
+        if (lv >= 3) {
+          const bonus = lv === 4 ? 2 : 1;
+          const newBoard = { ...s.board };
+          let buffCount = 0;
+          for (const [bk, u] of Object.entries(newBoard)) {
+            if (!u || u.owner !== player || u.state === 'destroyed') continue;
+            if (CARD_BY_ID[u.cardId]?.cls !== 'Tank') continue;
+            newBoard[bk] = { ...u, tempSideBonus: (u.tempSideBonus || 0) + bonus };
+            buffCount++;
+          }
+          if (buffCount > 0) {
+            s = { ...s, board: newBoard };
+            log.push(`${nm} L${lv}: ${buffCount} Tank(s) +${bonus} all sides`);
+          }
+        }
+        if (lv === 4) {
+          s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
+          log.push(`${nm} L4: 2 HQ damage to ${opp.toUpperCase()}`);
+        }
+        break;
+      }
+      case 27: { // Airfield — L1 aircraft effect (not automated), L2+ HQ damage
+        if (lv === 1) { log.push(`${nm} L1: Aircraft placement bonus (not automated)`); break; }
+        const dmg = lv === 4 ? 4 : 1;
+        s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - dmg } };
+        log.push(`${nm} L${lv}: ${dmg} HQ damage to ${opp.toUpperCase()}`);
+        if (lv >= 3) { s = { ...s, [player]: drawCards(s[player], 1) }; log.push(`${nm} L${lv}: Draw 1 card`); }
+        break;
+      }
+      case 28: { // Supply Depot — fuel + card draw at L3+, HQ at L4
+        const fuel = lv === 1 ? 1 : lv === 2 ? 2 : lv === 3 ? 2 : 3;
+        s = { ...s, [player]: gainFuel(s[player], fuel) };
+        log.push(`${nm} L${lv}: +${fuel} Fuel`);
+        if (lv >= 3) { s = { ...s, [player]: drawCards(s[player], 1) }; log.push(`${nm} L${lv}: Draw 1 card`); }
+        if (lv === 4) {
+          s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
+          log.push(`${nm} L4: 2 HQ damage to ${opp.toUpperCase()}`);
+        }
+        break;
+      }
+      case 29: log.push(`${nm} L${lv}: Return unit to hand (not automated)`); break;
+      case 30: log.push(`${nm} L${lv}: Look at opponent's hand (not automated)`); break;
+      case 31: { // City — adjacent friendly Infantry gain Guard and/or side bonus
+        const adjKeys = getAdjacentKeys(key);
+        const newBoard = { ...s.board };
+        let count = 0;
+        for (const ak of adjKeys) {
+          const u = newBoard[ak];
+          if (!u || u.owner !== player || u.state === 'destroyed') continue;
+          if (CARD_BY_ID[u.cardId]?.cls !== 'Infantry') continue;
+          let updated = { ...u };
+          if (lv === 1 || lv >= 3) updated.tempKeywords = [...updated.tempKeywords, 'Guard'];
+          if (lv >= 2) updated.tempSideBonus = updated.tempSideBonus + (lv === 4 ? 2 : 1);
+          newBoard[ak] = updated;
+          count++;
+        }
+        s = { ...s, board: newBoard };
+        if (count > 0) log.push(`${nm} L${lv}: ${count} adjacent Infantry buffed`);
+        if (lv === 4) { s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } }; log.push(`${nm} L4: 2 HQ damage`); }
+        break;
+      }
+      case 32: { // Artillery Position — HQ damage every level; L2/L4 also deal 1 hit
+        const dmg = lv === 1 ? 1 : lv === 2 ? 0 : lv === 3 ? 2 : 3;
+        if (dmg > 0) {
+          s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - dmg } };
+          log.push(`${nm} L${lv}: ${dmg} HQ damage to ${opp.toUpperCase()}`);
+        }
+        if (lv === 2 || lv === 4) log.push(`${nm} L${lv}: Deal 1 hit to 1 enemy (not automated — resolve manually)`);
+        break;
+      }
+      case 33: { // Fortification — adjacent friendly units gain Armor this turn
+        const adjKeys = getAdjacentKeys(key);
+        const newBoard = { ...s.board };
+        let count = 0;
+        for (const ak of adjKeys) {
+          const u = newBoard[ak];
+          if (!u || u.owner !== player || u.state === 'destroyed') continue;
+          let updated = { ...u, tempKeywords: [...u.tempKeywords, 'Armor'] };
+          if (lv >= 3) updated.tempSideBonus = updated.tempSideBonus + (lv === 4 ? 2 : 1);
+          newBoard[ak] = updated;
+          count++;
+        }
+        s = { ...s, board: newBoard };
+        if (count > 0) log.push(`${nm} L${lv}: ${count} adjacent units gain Armor`);
+        if (lv === 4) { s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } }; log.push(`${nm} L4: 2 HQ damage`); }
+        break;
+      }
+      default: log.push(`${nm} L${lv}: effect triggered (not automated)`);
+    }
+  }
+  return { state: s, log };
+}
+
+// ── Instant commands ──────────────────────────────────────────────────────────
+// Returns true if handled (instant), false if it needs targeting UI (deferred).
+function playInstantCommand(cardId) {
+  const active = state.initiative;
+  const card = CARD_BY_ID[cardId];
+
+  const handAfter = [...state[active].hand];
+  const idx = handAfter.indexOf(cardId);
+  if (idx !== -1) handAfter.splice(idx, 1);
+
+  let s = {
+    ...state,
+    [active]: { ...state[active], fuel: state[active].fuel - card.cost, hand: handAfter },
+  };
+  const log = [];
+
+  switch (cardId) {
+    case 22: { // Recon — draw 3
+      s = { ...s, [active]: drawCards(s[active], 3) };
+      log.push(`${card.name}: Draw 3 cards`);
+      break;
+    }
+    case 76: { // Industrial Surge — +2 Fuel at start of next turn
+      s = { ...s, [active]: { ...s[active], pendingFuelGain: s[active].pendingFuelGain + 2 } };
+      log.push(`${card.name}: +2 Fuel at start of next turn`);
+      break;
+    }
+    case 80: { // Entrench — all friendly Infantry +2 all sides this turn
+      const newBoard = { ...s.board };
+      let count = 0;
+      for (const [k, u] of Object.entries(newBoard)) {
+        if (!u || u.owner !== active || u.state === 'destroyed') continue;
+        if (CARD_BY_ID[u.cardId]?.cls !== 'Infantry') continue;
+        newBoard[k] = { ...u, tempSideBonus: u.tempSideBonus + 2 };
+        count++;
+      }
+      s = { ...s, board: newBoard };
+      log.push(`${card.name}: ${count} Infantry +2 all sides this turn`);
+      break;
+    }
+    case 78: { // Combined Arms Doctrine — remove all Suppression; +2 HQ per unit cleared
+      const newBoard = { ...s.board };
+      let cleared = 0;
+      for (const [k, u] of Object.entries(newBoard)) {
+        if (!u || u.state !== 'suppressed') continue;
+        newBoard[k] = { ...u, state: 'normal' };
+        cleared++;
+      }
+      const hpGain = cleared * 2;
+      s = { ...s, board: newBoard, [active]: { ...s[active], hq: s[active].hq + hpGain } };
+      log.push(`${card.name}: ${cleared} unit(s) un-suppressed, +${hpGain} HQ HP`);
+      break;
+    }
+    case 51: { // Rally Cry — up to 2 friendly units +1 all sides (prototype: buffs all)
+      const newBoard = { ...s.board };
+      let count = 0;
+      for (const [k, u] of Object.entries(newBoard)) {
+        if (!u || u.owner !== active || u.state === 'destroyed') continue;
+        newBoard[k] = { ...u, tempSideBonus: (u.tempSideBonus || 0) + 1 };
+        count++;
+      }
+      s = { ...s, board: newBoard };
+      log.push(`${card.name}: ${count} unit(s) +1 all sides [prototype: buffs all, not choose-2]`);
+      break;
+    }
+    case 73: { // Overrun — each Suppress/Destroy this turn deals +1 HQ damage
+      s = { ...s, [active]: { ...s[active], overrun: true } };
+      log.push(`${card.name}: Suppress/Destroy deals +1 HQ damage this turn`);
+      break;
+    }
+    case 75: { // Hold Position — all friendly units adjacent to controlled obj gain Armor
+      const newBoard = { ...s.board };
+      let count = 0;
+      for (const [bk, u] of Object.entries(newBoard)) {
+        if (!u || u.owner !== active || u.state === 'destroyed') continue;
+        const adjHasObj = getAdjacentKeys(bk).some(k => s.objectives[k]?.controller === active);
+        if (!adjHasObj) continue;
+        newBoard[bk] = { ...u, grantedKeywords: [...(u.grantedKeywords || []), 'Armor'] };
+        count++;
+      }
+      s = { ...s, board: newBoard };
+      log.push(`${card.name}: ${count} unit(s) near controlled objectives gain Armor (until your next turn)`);
+      break;
+    }
+    default:
+      return false; // targeted or not yet implemented
+  }
+
+  commitState(s, log);
+  return true;
+}
+
+// ── Targeted commands ─────────────────────────────────────────────────────────
+
+// Returns Set of valid board tile keys for a given targeted command.
+// Returns empty Set if no valid targets exist, null if command is unknown/not targeted.
+function getCommandTargets(commandId) {
+  const active = state.initiative;
+  const entries = Object.entries(state.board);
+  const friendlies = entries.filter(([, u]) => u && u.owner === active && u.state !== 'destroyed');
+  const enemies    = entries.filter(([, u]) => u && u.owner !== active && u.state !== 'destroyed');
+
+  switch (commandId) {
+    case 16: return new Set(enemies.map(([k]) => k));   // Artillery Barrage — any enemy
+    case 20: return new Set(enemies.map(([k]) => k));   // Air Strike — any enemy
+    case 79: return new Set(enemies.map(([k]) => k));   // Suppressing Fire — any enemy
+
+    case 17: // Blitzkrieg Order — friendly Tanks
+      return new Set(friendlies.filter(([, u]) => CARD_BY_ID[u.cardId]?.cls === 'Tank' && u.state === 'normal').map(([k]) => k));
+
+    case 18: // Field Medic — friendly suppressed
+    case 54: // Last Stand — friendly suppressed
+      return new Set(friendlies.filter(([, u]) => u.state === 'suppressed').map(([k]) => k));
+
+    case 19: // Tactical Withdrawal — any friendly unit
+    case 49: // Smoke Screen — any friendly → gains Guard
+      return new Set(friendlies.map(([k]) => k));
+
+    case 50: // Improvised Position — friendly unit with no base keyword
+      return new Set(friendlies.filter(([, u]) => !CARD_BY_ID[u.cardId]?.keyword).map(([k]) => k));
+
+    case 74: // Dig In — friendly unit on a controlled objective
+      return new Set(friendlies.filter(([k]) => state.objectives[k]?.controller === active).map(([k]) => k));
+
+    default: return null; // unknown / not a targeted command
+  }
+}
+
+// Deduct fuel, remove card from hand, enter command-targeting mode.
+function startCommandTargeting(cardId) {
+  const active = state.initiative;
+  const card = CARD_BY_ID[cardId];
+  const handAfter = [...state[active].hand];
+  const idx = handAfter.indexOf(cardId);
+  if (idx !== -1) handAfter.splice(idx, 1);
+  const s = { ...state, [active]: { ...state[active], fuel: state[active].fuel - card.cost, hand: handAfter } };
+  pendingCommandId = cardId;
+  uiState = 'command-targeting';
+  commitState(s, [`${card.name}: choose a target`]);
+}
+
+// Apply the effect of a targeted command to the clicked tile.
+function applyCommandEffect(commandId, targetKey) {
+  const active = state.initiative;
+  const opp = active === 'p1' ? 'p2' : 'p1';
+  const card = CARD_BY_ID[commandId];
+  let s = { ...state };
+  const log = [];
+  const unit = s.board[targetKey];
+  const unitName = CARD_BY_ID[unit?.cardId]?.name ?? '?';
+
+  switch (commandId) {
+    case 16: { // Artillery Barrage — deplete armor + suppress enemy
+      const depleted = { ...unit, armorHits: maxArmorHits(unit) };
+      const suppressed = unit.state === 'normal' ? { ...depleted, state: 'suppressed' } : depleted;
+      const hqDmg = unit.state === 'normal' ? 1 : 0;
+      s = { ...s, board: { ...s.board, [targetKey]: suppressed },
+            [unit.owner]: { ...s[unit.owner], hq: s[unit.owner].hq - hqDmg } };
+      log.push(`${card.name}: ${unitName} Armor stripped + Suppressed (${hqDmg} HQ damage)`);
+      break;
+    }
+    case 17: { // Blitzkrieg Order — Tank attacks immediately (enter attack targeting)
+      const tankTargets = getAttackableTargets(s, targetKey);
+      if (tankTargets.length === 0) {
+        log.push(`${card.name}: ${unitName} has no adjacent targets`);
+        pendingCommandId = null;
+        uiState = 'idle';
+        commitState(s, log);
+        return;
+      }
+      pendingCommandId = null;
+      uiState = 'targeting';
+      pendingAttackerKey = targetKey;
+      log.push(`${card.name}: ${unitName} may attack immediately`);
+      commitState(s, log);
+      return; // stay in targeting — don't fall through to idle
+    }
+    case 18: { // Field Medic — un-suppress
+      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, state: 'normal' } } };
+      log.push(`${card.name}: ${unitName} un-suppressed`);
+      break;
+    }
+    case 19: { // Tactical Withdrawal — return to hand, draw 1
+      const handAfter = [...s[active].hand, unit.cardId];
+      s = { ...s, board: { ...s.board, [targetKey]: null },
+            [active]: drawCards({ ...s[active], hand: handAfter }, 1) };
+      log.push(`${card.name}: ${unitName} returned to hand. Draw 1`);
+      break;
+    }
+    case 20: { // Air Strike — 1 hit per friendly Aircraft
+      const count = Object.values(s.board).filter(u => u && u.owner === active && u.state !== 'destroyed' && CARD_BY_ID[u.cardId]?.cls === 'Aircraft').length;
+      if (count === 0) { log.push(`${card.name}: no friendly Aircraft on board`); break; }
+      let tgt = unit; let dmg = 0;
+      for (let i = 0; i < count && tgt; i++) {
+        const { newUnit, hqDamage } = applyHit(tgt);
+        dmg += hqDamage;
+        tgt = newUnit?.state === 'destroyed' ? null : newUnit;
+      }
+      s = { ...s, board: { ...s.board, [targetKey]: tgt },
+            [unit.owner]: { ...s[unit.owner], hq: s[unit.owner].hq - dmg } };
+      log.push(`${card.name}: ${count} hit(s) on ${unitName} — ${dmg} HQ damage`);
+      break;
+    }
+    case 49: { // Smoke Screen — give Guard until owner's next turn
+      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, grantedKeywords: [...(unit.grantedKeywords || []), 'Guard'] } } };
+      log.push(`${card.name}: ${unitName} gains Guard (until your next turn)`);
+      break;
+    }
+    case 50: { // Improvised Position — give Armor until owner's next turn
+      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, grantedKeywords: [...(unit.grantedKeywords || []), 'Armor'] } } };
+      log.push(`${card.name}: ${unitName} gains Armor (until your next turn)`);
+      break;
+    }
+    case 54: { // Last Stand — un-suppress + give Guard until owner's next turn
+      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, state: 'normal', grantedKeywords: [...(unit.grantedKeywords || []), 'Guard'] } } };
+      log.push(`${card.name}: ${unitName} un-suppressed + gains Guard (until your next turn)`);
+      break;
+    }
+    case 74: { // Dig In — Guard + Armor until owner's next turn
+      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, grantedKeywords: [...(unit.grantedKeywords || []), 'Guard', 'Armor'] } } };
+      log.push(`${card.name}: ${unitName} gains Guard + Armor (until your next turn)`);
+      break;
+    }
+    case 79: { // Suppressing Fire — 1 hit per friendly Infantry
+      const count = Object.values(s.board).filter(u => u && u.owner === active && u.state !== 'destroyed' && CARD_BY_ID[u.cardId]?.cls === 'Infantry').length;
+      if (count === 0) { log.push(`${card.name}: no friendly Infantry on board`); break; }
+      let tgt = unit; let dmg = 0;
+      for (let i = 0; i < count && tgt; i++) {
+        const { newUnit, hqDamage } = applyHit(tgt);
+        dmg += hqDamage;
+        tgt = newUnit?.state === 'destroyed' ? null : newUnit;
+      }
+      s = { ...s, board: { ...s.board, [targetKey]: tgt },
+            [unit.owner]: { ...s[unit.owner], hq: s[unit.owner].hq - dmg } };
+      log.push(`${card.name}: ${count} hit(s) on ${unitName} — ${dmg} HQ damage`);
+      break;
+    }
+    default: break;
+  }
+
+  pendingCommandId = null;
+  uiState = 'idle';
+  commitState(s, log);
+  checkWin();
+}
+
+// ── Missions ──────────────────────────────────────────────────────────────────
+
+function playMissionCard(cardId) {
+  const active = state.initiative;
+  const card = CARD_BY_ID[cardId];
+  const handAfter = [...state[active].hand];
+  const idx = handAfter.indexOf(cardId);
+  if (idx !== -1) handAfter.splice(idx, 1);
+  let s = { ...state, [active]: { ...state[active], fuel: state[active].fuel - card.cost, hand: handAfter } };
+  const log = [];
+
+  if (cardId === 55) { // Armored Spearhead: instant — next Tank costs 2 less
+    s = { ...s, [active]: { ...s[active], tempFuelDiscount: (s[active].tempFuelDiscount ?? 0) + 2 } };
+    log.push(`${card.name}: played — next Tank costs 2 less Fuel`);
+  } else {
+    const newMission = { cardId, turnsRemaining: card.limitTurns || 5 };
+    s = { ...s, [active]: { ...s[active], missions: [...s[active].missions, newMission] } };
+    log.push(`${card.name}: mission active (${newMission.turnsRemaining} turns)`);
+    const { state: afterCheck, log: checkLog } = checkActiveMissions(s, active, {});
+    s = afterCheck;
+    log.push(...checkLog);
+  }
+
+  commitState(s, log);
+}
+
+// Check all active missions for a player. ctx flags: { endOfTurn, aircraftKill, heavyArmorKill }.
+function checkActiveMissions(s, player, ctx) {
+  const missions = s[player]?.missions;
+  if (!missions?.length) return { state: s, log: [] };
+  const log = [];
+  const remaining = [];
+
+  for (const m of missions) {
+    const { met, targetKey } = evalMissionCondition(s, player, m.cardId, ctx);
+    if (met) {
+      const r = applyMissionReward(s, player, m.cardId, targetKey);
+      s = r.state;
+      log.push(...r.log);
+    } else {
+      remaining.push(m);
+    }
+  }
+  s = { ...s, [player]: { ...s[player], missions: remaining } };
+  return { state: s, log };
+}
+
+function evalMissionCondition(s, player, cardId, ctx) {
+  const opp = player === 'p1' ? 'p2' : 'p1';
+  const objs = Object.values(s.objectives ?? {});
+  const boardVals = Object.entries(s.board);
+  const friendlies = boardVals.filter(([, u]) => u && u.owner === player && u.state !== 'destroyed');
+  const enemies    = boardVals.filter(([, u]) => u && u.owner === opp   && u.state !== 'destroyed');
+
+  switch (cardId) {
+    case 23: { // Hold the Line: control ALL objectives at end of turn
+      if (!ctx.endOfTurn || objs.length === 0) return { met: false };
+      return { met: objs.every(o => o.controller === player) };
+    }
+    case 24: { // Deep Strike: 1 friendly adjacent to 2+ enemies
+      for (const [fk] of friendlies) {
+        const adjEnemies = getAdjacentKeys(fk).filter(k => s.board[k]?.owner === opp && s.board[k]?.state !== 'destroyed').length;
+        if (adjEnemies >= 2) return { met: true };
+      }
+      return { met: false };
+    }
+    case 25: // Blitz Assault: 2+ kills this turn
+      return { met: (s[player].killsThisTurn ?? 0) >= 2 };
+    case 56: // Total Air Superiority: kill with Aircraft
+      return { met: !!ctx.aircraftKill };
+    case 57: { // Fortify the Line: control 2+ objectives at end of turn
+      if (!ctx.endOfTurn) return { met: false };
+      return { met: objs.filter(o => o.controller === player).length >= 2 };
+    }
+    case 58: { // Encirclement: an enemy has 2+ friendly units adjacent
+      for (const [ek] of enemies) {
+        const adjFriendly = getAdjacentKeys(ek).filter(k => s.board[k]?.owner === player && s.board[k]?.state !== 'destroyed').length;
+        if (adjFriendly >= 2) return { met: true, targetKey: ek };
+      }
+      return { met: false };
+    }
+    case 81: // Total Onslaught: 3+ total kills
+      return { met: (s[player].totalKills ?? 0) >= 3 };
+    case 84: // Overwhelming Force: kill with Heavy Armor
+      return { met: !!ctx.heavyArmorKill };
+    default: return { met: false };
+  }
+}
+
+function applyMissionReward(s, player, cardId, targetKey) {
+  const opp = player === 'p1' ? 'p2' : 'p1';
+  const log = [];
+  const nm = CARD_BY_ID[cardId]?.name ?? '?';
+
+  switch (cardId) {
+    case 23: // Hold the Line: +5 HQ (capped at 20)
+      s = { ...s, [player]: { ...s[player], hq: Math.min(s[player].hq + 5, 20) } };
+      log.push(`${nm}: COMPLETE — +5 HQ HP`);
+      break;
+    case 24: // Deep Strike: 2 HQ damage
+      s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
+      log.push(`${nm}: COMPLETE — 2 HQ damage to ${opp.toUpperCase()}`);
+      break;
+    case 25: { // Blitz Assault: draw 2 + 1 Fuel
+      s = { ...s, [player]: drawCards(gainFuel(s[player], 1), 2) };
+      log.push(`${nm}: COMPLETE — Draw 2, +1 Fuel`);
+      break;
+    }
+    case 56: // Total Air Superiority: 2 HQ damage
+      s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
+      log.push(`${nm}: COMPLETE — 2 HQ damage to ${opp.toUpperCase()}`);
+      break;
+    case 57: { // Fortify the Line: un-suppress 1 unit + Armor (auto: first found)
+      const newBoard = { ...s.board };
+      const entry = Object.entries(newBoard).find(([, u]) => u && u.owner === player && u.state === 'suppressed');
+      if (entry) {
+        const [sk, su] = entry;
+        newBoard[sk] = { ...su, state: 'normal', grantedKeywords: [...(su.grantedKeywords || []), 'Armor'] };
+        s = { ...s, board: newBoard };
+        log.push(`${nm}: COMPLETE — ${CARD_BY_ID[su.cardId]?.name} un-suppressed + Armor`);
+      } else {
+        log.push(`${nm}: COMPLETE — (no suppressed unit to heal)`);
+      }
+      break;
+    }
+    case 58: { // Encirclement: 1 hit to surrounded enemy
+      const target = s.board[targetKey];
+      if (target) {
+        const { newUnit, hqDamage } = applyHit(target);
+        const final = newUnit?.state === 'destroyed' ? null : newUnit;
+        s = { ...s, board: { ...s.board, [targetKey]: final }, [opp]: { ...s[opp], hq: s[opp].hq - hqDamage } };
+        log.push(`${nm}: COMPLETE — 1 hit on ${CARD_BY_ID[target.cardId]?.name} (${hqDamage} HQ dmg)`);
+      } else {
+        log.push(`${nm}: COMPLETE`);
+      }
+      break;
+    }
+    case 81: // Total Onslaught: 2 HQ damage
+      s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
+      log.push(`${nm}: COMPLETE — 2 HQ damage to ${opp.toUpperCase()}`);
+      break;
+    case 84: // Overwhelming Force: 2 HQ damage
+      s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
+      log.push(`${nm}: COMPLETE — 2 HQ damage to ${opp.toUpperCase()}`);
+      break;
+    default: break;
+  }
+  return { state: s, log };
+}
+
+// ── End Turn ──────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-end-turn').addEventListener('click', () => {
+  if (gameOver || !state) return;
+  if (isOnline && state.initiative !== myRole) return;
+
+  const currentPlayer = state.initiative;
+
+  // Check end-of-turn missions before swapping (board/objective state is intact)
+  const { state: afterEndMissions, log: endMissionLog } = checkActiveMissions(state, currentPlayer, { endOfTurn: true });
+  let s = afterEndMissions;
+
+  // Reset killsThisTurn for the player who just ended
+  s = { ...s, [currentPlayer]: { ...s[currentPlayer], killsThisTurn: 0 } };
+
+  let newState = endTurn(s);                             // swap initiative, increment turn
+  const newActive = newState.initiative;
+  newState = { ...newState, [newActive]: drawCards(newState[newActive], 1) };
+  newState = startOfTurn(newState);                      // gain fuel for new active player
+  newState = updateObjectiveLevels(newState);            // escalate objective levels
+  newState = checkObjectiveControl(newState);            // check majority-adjacent control
+  const { state: afterEffects, log: effectLog } = applyObjectiveEffects(newState, newActive);
+  newState = afterEffects;
+
+  attackedThisTurn = new Map();
+  uiState = "idle";
+  selectedHandCardId = null;
+  pendingAttackerKey = null;
+  pendingCommandId = null;
+
+  const turnLog = [...endMissionLog, `--- Turn ${newState.turn} — ${newState.initiative.toUpperCase()} ---`, ...effectLog];
+  commitState(newState, turnLog);
+  checkWin();
+});
+
+// ── Cancel ────────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-cancel').addEventListener('click', () => {
+  uiState = "idle";
+  selectedHandCardId = null;
+  pendingAttackerKey = null;
+  if (state) redraw();
+});
+
+// ── P2 online init ────────────────────────────────────────────────────────────
+// P1 goes through the normal lobby. P2 skips it and waits for host to start.
+if (isOnline && myRole === 'p2') {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('waiting-screen').style.display = 'flex';
+  subscribeState(gameId, remoteState => {
+    if (remoteState._pushId === myLastPushId) return;
+    document.getElementById('waiting-screen').style.display = 'none';
+    document.getElementById('game-area').style.display = 'flex';
+    receiveRemoteState(remoteState);
+  });
+}

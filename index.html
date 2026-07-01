@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SIGNAL — Lobby</title>
+  <link rel="stylesheet" href="css/game.css">
+</head>
+<body>
+
+  <div id="lobby">
+    <div class="lobby-title">SIGNAL</div>
+    <div class="lobby-subtitle">WWII TACTICAL CARD GAME — PROTOTYPE</div>
+
+    <div class="deck-grid" id="main-buttons" style="margin-top: 32px;">
+      <div class="deck-option" id="btn-local">
+        <div class="deck-name">Local Play</div>
+        <div class="deck-flavor">Two players, one screen. Take turns passing the device.</div>
+      </div>
+      <div class="deck-option" id="btn-create">
+        <div class="deck-name">Create Game</div>
+        <div class="deck-flavor">Generate a code and share it with your opponent.</div>
+      </div>
+      <div class="deck-option" id="btn-join-option">
+        <div class="deck-name">Join Game</div>
+        <div class="deck-flavor">Enter a code to join your opponent's game.</div>
+      </div>
+    </div>
+
+    <div id="join-form" style="display:none; flex-direction:column; align-items:center; gap:16px; margin-top:32px;">
+      <input id="code-input" type="text" placeholder="XXXXXX" maxlength="6"
+        style="font-size:28px; letter-spacing:8px; text-transform:uppercase; padding:14px 28px;
+               background:#0f1a30; border:2px solid #444; color:#eee; border-radius:6px;
+               text-align:center; width:220px;">
+      <button class="btn btn-primary" id="btn-join">JOIN GAME</button>
+    </div>
+
+    <div id="create-panel" style="display:none; flex-direction:column; align-items:center; gap:16px; margin-top:32px;">
+      <div style="font-size:12px; color:#888; letter-spacing:2px;">SHARE THIS CODE WITH YOUR OPPONENT</div>
+      <div id="game-code-display" style="font-size:52px; font-weight:bold; letter-spacing:12px; color:#f5a623;"></div>
+      <div style="font-size:12px; color:#555;">When they join, click Enter Game to pick decks and map.</div>
+      <button class="btn btn-primary" id="btn-enter-game">Enter Game</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { generateGameCode } from './js/firebase.js';
+
+    document.getElementById('btn-local').addEventListener('click', () => {
+      window.location.href = 'game';
+    });
+
+    document.getElementById('btn-create').addEventListener('click', () => {
+      const code = generateGameCode();
+      document.getElementById('game-code-display').textContent = code;
+      document.getElementById('create-panel').style.display = 'flex';
+      document.getElementById('main-buttons').style.display = 'none';
+      document.getElementById('btn-enter-game').addEventListener('click', () => {
+        window.location.href = `game?game=${code}&role=p1`;
+      });
+    });
+
+    document.getElementById('btn-join-option').addEventListener('click', () => {
+      document.getElementById('join-form').style.display = 'flex';
+      document.getElementById('main-buttons').style.display = 'none';
+    });
+
+    document.getElementById('btn-join').addEventListener('click', () => {
+      const code = document.getElementById('code-input').value.trim().toUpperCase();
+      if (code.length < 4) return;
+      window.location.href = `game?game=${code}&role=p2`;
+    });
+
+    document.getElementById('code-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('btn-join').click();
+    });
+  </script>
+
+</body>
+</html>

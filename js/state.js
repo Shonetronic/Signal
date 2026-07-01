@@ -1,0 +1,252 @@
+// Game state shape (canonical — see ARCHITECTURE.md):
+// {
+//   turn: number,               — starts at 1, increments on endTurn
+//   initiative: "p1" | "p2",   — whose turn it is
+//   phase: "play",              — reserved; always "play" for now
+//   p2Joined: boolean,          — set by lobby when opponent joins
+//
+//   p1: PlayerState,
+//   p2: PlayerState,
+//
+//   board: { [tileKey]: BoardUnit | null },   — tileKey = "row,col"
+//   objectives: { [tileKey]: { cardId, level } },
+//   log: string[],
+// }
+//
+// PlayerState: {
+//   hq: number,                 — starts 20
+//   fuel: number,               — max 6
+//   pendingFuelGain: number,    — delayed fuel (Industrial Surge), added at next startOfTurn
+//   hand: number[],             — cardIds in hand
+//   deck: number[],             — cardIds remaining (top = index 0)
+//   missions: ActiveMission[],
+//   tempFuelDiscount: number,   — discount on next card of matching class
+// }
+//
+// ActiveMission: { cardId, turnsRemaining, progress }
+//
+// BoardUnit: {
+//   cardId: number,
+//   owner: "p1" | "p2",
+//   state: "normal" | "suppressed" | "destroyed",
+//   armorHits: number,          — hits absorbed by armor so far
+//   tempKeywords: string[],     — keywords added THIS TURN only (objective buffs, Entrench); cleared by endTurn
+//   grantedKeywords: string[],  — keywords from commands lasting UNTIL OWNER'S NEXT TURN; cleared by startOfTurn
+//   tempSideBonus: number,      — +N to all sides this turn
+//   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
+// }
+
+import { CARD_BY_ID } from './cards.js';
+
+// ── State factory ────────────────────────────────────────────────────────────
+
+export function createInitialState(p1DeckIds, p2DeckIds, mapId = 'kursk') {
+  return {
+    turn: 1,
+    initiative: "p1",
+    phase: "play",
+    p2Joined: false,
+    mapId,
+    p1: createPlayerState(p1DeckIds),
+    p2: createPlayerState(p2DeckIds),
+    board: Object.fromEntries(
+      Array.from({ length: 4 }, (_, r) =>
+        Array.from({ length: 4 }, (_, c) => [`${r},${c}`, null])
+      ).flat()
+    ),
+    objectives: {},
+    log: [],
+  };
+}
+
+function createPlayerState(deckCardIds) {
+  const shuffled = [...deckCardIds].sort(() => Math.random() - 0.5);
+  const hand = shuffled.slice(0, 5);
+  const deck = shuffled.slice(5);
+  return {
+    hq: 20,
+    fuel: 0,
+    pendingFuelGain: 0,
+    hand,
+    deck,
+    missions: [],
+    tempFuelDiscount: 0,
+    overrun: false,
+  };
+}
+
+// ── Turn transitions ─────────────────────────────────────────────────────────
+
+// Active player gains 3 fuel (+pendingFuelGain, capped at 6).
+// Resets pendingFuelGain to 0.
+// Decrements mission turnsRemaining, removes expired missions.
+// Clears grantedKeywords from all units owned by the active player.
+export function startOfTurn(state) {
+  const activePlayer = state.initiative;
+  let ps = { ...state[activePlayer] };
+  ps = gainFuel(ps, 3 + ps.pendingFuelGain);
+  ps.pendingFuelGain = 0;
+  ps.missions = ps.missions
+    .map(m => ({ ...m, turnsRemaining: m.turnsRemaining - 1 }))
+    .filter(m => m.turnsRemaining > 0);
+
+  // Clear "until your next turn" keyword grants when your turn comes around again
+  const newBoard = Object.fromEntries(
+    Object.entries(state.board).map(([k, u]) =>
+      [k, u && u.owner === activePlayer && u.grantedKeywords?.length
+        ? { ...u, grantedKeywords: [] }
+        : u]
+    )
+  );
+
+  return { ...state, [activePlayer]: ps, board: newBoard };
+}
+
+// Swaps initiative, increments turn counter.
+// Clears justPlaced, tempKeywords, tempSideBonus on all board units.
+export function endTurn(state) {
+  const newBoard = Object.fromEntries(
+    Object.entries(state.board).map(([k, v]) =>
+      [k, v ? { ...v, justPlaced: false, tempKeywords: [], tempSideBonus: 0 } : null]
+    )
+  );
+  return {
+    ...state,
+    board: newBoard,
+    p1: { ...state.p1, overrun: false },
+    p2: { ...state.p2, overrun: false },
+    initiative: state.initiative === "p1" ? "p2" : "p1",
+    turn: state.turn + 1,
+  };
+}
+
+// Checks who controls each objective (majority of adjacent non-destroyed units).
+// Called at the start of each player's turn before applying objective effects.
+export function checkObjectiveControl(state) {
+  const updated = {};
+  for (const [key, obj] of Object.entries(state.objectives)) {
+    const [r, c] = key.split(',').map(Number);
+    const adjKeys = [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
+      .filter(([row, col]) => row >= 0 && row < 4 && col >= 0 && col < 4)
+      .map(([row, col]) => `${row},${col}`);
+    let p1 = 0, p2 = 0;
+    for (const k of adjKeys) {
+      const u = state.board[k];
+      if (!u || u.state === 'destroyed') continue;
+      if (u.owner === 'p1') p1++; else p2++;
+    }
+    const controller = p1 > p2 ? 'p1' : p2 > p1 ? 'p2' : null;
+    updated[key] = { ...obj, controller };
+  }
+  return { ...state, objectives: updated };
+}
+
+// Recalculates objective level for current turn and sets it on all placed objectives.
+export function updateObjectiveLevels(state) {
+  const level = objectiveLevel(state.turn);
+  if (level === 0) return state;
+  const objectives = Object.fromEntries(
+    Object.entries(state.objectives).map(([k, obj]) => [k, { ...obj, level }])
+  );
+  return { ...state, objectives };
+}
+
+// ── Player state helpers ─────────────────────────────────────────────────────
+
+// Draws up to n cards from deck into hand. Stops if deck empty.
+export function drawCards(playerState, n) {
+  const ps = { ...playerState };
+  const drawn = ps.deck.slice(0, n);
+  ps.hand = [...ps.hand, ...drawn];
+  ps.deck = ps.deck.slice(n);
+  return ps;
+}
+
+export function spendFuel(playerState, amount) {
+  return { ...playerState, fuel: Math.max(0, playerState.fuel - amount) };
+}
+
+export function gainFuel(playerState, amount) {
+  return { ...playerState, fuel: Math.min(6, playerState.fuel + amount) };
+}
+
+// ── Board unit helpers ───────────────────────────────────────────────────────
+
+// Returns card's base side value + tempSideBonus.
+export function getSideValue(boardUnit, dir) {
+  const card = CARD_BY_ID[boardUnit.cardId];
+  if (!card || card.type !== "unit") return 0;
+  return card[dir] + (boardUnit.tempSideBonus || 0);
+}
+
+// Returns card's base keyword (if any) + tempKeywords + grantedKeywords.
+export function getKeywords(boardUnit) {
+  const card = CARD_BY_ID[boardUnit.cardId];
+  const base = card?.keyword ? [card.keyword] : [];
+  return [...base, ...(boardUnit.tempKeywords || []), ...(boardUnit.grantedKeywords || [])];
+}
+
+// Heavy Armor → 2, Armor → 1, else → 0.
+export function maxArmorHits(boardUnit) {
+  const kws = getKeywords(boardUnit);
+  if (kws.includes("Heavy Armor")) return 2;
+  if (kws.includes("Armor")) return 1;
+  return 0;
+}
+
+// maxArmorHits + 2 (armor absorbs N hits, then Suppressed, then Destroyed).
+export function hitsToDestroy(boardUnit) {
+  return maxArmorHits(boardUnit) + 2;
+}
+
+// Applies one hit following the sequence:
+//   armorHits < maxArmorHits → absorb (hqDamage = 0, state unchanged)
+//   state === "normal"       → "suppressed" (hqDamage = 1)
+//   state === "suppressed"   → "destroyed"  (hqDamage = 2)
+// hqDamage is dealt to the unit owner's HQ (the one being attacked).
+export function applyHit(boardUnit) {
+  const unit = { ...boardUnit };
+  const armor = maxArmorHits(unit);
+
+  if (unit.armorHits < armor) {
+    unit.armorHits += 1;
+    return { newUnit: unit, hqDamage: 0 };
+  }
+
+  if (unit.state === "normal") {
+    unit.state = "suppressed";
+    return { newUnit: unit, hqDamage: 1 };
+  }
+
+  if (unit.state === "suppressed") {
+    unit.state = "destroyed";
+    return { newUnit: unit, hqDamage: 2 };
+  }
+
+  // Already destroyed — safe fallback.
+  return { newUnit: unit, hqDamage: 0 };
+}
+
+// Compares attacker's side value vs defender's opposite side. Tie = attacker wins.
+// attDir is the direction the attacker is swinging FROM
+// (e.g. attacker is N of defender → attDir = "s").
+export function attackBeats(attacker, attDir, defender) {
+  const attValue = getSideValue(attacker, attDir);
+  const defValue = getSideValue(defender, oppositeDir(attDir));
+  return attValue >= defValue;
+}
+
+export function oppositeDir(dir) {
+  return { n: "s", s: "n", e: "w", w: "e" }[dir];
+}
+
+// ── Objective helpers ────────────────────────────────────────────────────────
+
+// turn 1 → 0 (no bonus), turns 2-3 → 1, 4-5 → 2, 6-7 → 3, 8+ → 4.
+export function objectiveLevel(turn) {
+  if (turn < 2) return 0;
+  if (turn <= 3) return 1;
+  if (turn <= 5) return 2;
+  if (turn <= 7) return 3;
+  return 4;
+}
