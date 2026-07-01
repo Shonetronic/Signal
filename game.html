@@ -70,52 +70,63 @@
   <!-- ── WAITING SCREEN (P2 online, waiting for host to start) ── -->
   <div id="waiting-screen" style="display:none; flex-direction:column; align-items:center; gap:24px; padding:80px 16px;">
     <div class="lobby-title">SIGNAL</div>
-    <div class="picker-label">WAITING FOR HOST...</div>
-    <div style="font-size:13px; color:#555; text-align:center;">Game will start when the host picks decks and map.</div>
+    <div class="picker-label">PLEASE WAIT</div>
+    <div id="waiting-msg" style="font-size:13px; color:#555; text-align:center;">Connecting...</div>
   </div>
 
   <!-- ── END GAME OVERLAY ── -->
   <div id="end-screen" style="display:none;">
     <div class="end-content">
       <div class="end-winner" id="end-winner"></div>
-      <div class="end-subtitle">HQ DESTROYED</div>
-      <button class="btn btn-primary" onclick="location.reload()">Play Again</button>
+      <div class="end-subtitle" id="end-subtitle">HQ DESTROYED</div>
+      <button class="btn btn-primary" onclick="window.location.href='/'">Main Menu</button>
     </div>
   </div>
 
-  <!-- ── GAME AREA (hidden until map chosen) ── -->
-  <div id="game-area" style="display:none; flex-direction:column; align-items:center; gap:12px; width:100%;">
+  <!-- ── GAME AREA ── -->
+  <div id="game-area" class="game-layout" style="display:none">
 
-    <div class="hq-bar">
-      <span class="hq-label">P2 HQ</span>
-      <span class="hq-hp" id="p2-hq">20</span>
-      <span class="fuel-display" id="p2-fuel">0/6 Fuel</span>
+    <!-- LEFT: stats + controls sandwiched between -->
+    <div class="stats-panel">
+      <div class="stat-block" id="stat-p2">
+        <div class="stat-label">P2</div>
+        <div class="stat-hp" id="p2-hq">20</div>
+        <div class="stat-sub">HQ Health</div>
+        <div class="stat-fuel" id="p2-fuel">0 / 6 Fuel</div>
+      </div>
+
+      <div class="side-controls">
+        <span class="turn-info" id="turn-display">Turn 1 — P1 to play</span>
+        <button class="btn btn-primary" id="btn-end-turn">End Turn</button>
+        <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+        <button class="btn btn-exit" id="btn-exit">Exit</button>
+      </div>
+
+      <div class="stat-block" id="stat-p1">
+        <div class="stat-label">P1</div>
+        <div class="stat-hp" id="p1-hq">20</div>
+        <div class="stat-sub">HQ Health</div>
+        <div class="stat-fuel" id="p1-fuel">0 / 6 Fuel</div>
+      </div>
     </div>
 
-    <div class="board-area">
-      <div class="board" id="board"></div>
+    <!-- CENTER: board + hand + missions -->
+    <div class="center-panel">
+      <div class="board-area">
+        <div class="board" id="board"></div>
+      </div>
+      <div class="hand-area">
+        <div class="hand-label">YOUR HAND</div>
+        <div class="hand" id="p1-hand"></div>
+      </div>
+      <div class="missions-area" id="missions-area"></div>
     </div>
 
-    <div class="hq-bar">
-      <span class="hq-label">P1 HQ</span>
-      <span class="hq-hp" id="p1-hq">20</span>
-      <span class="fuel-display" id="p1-fuel">0/6 Fuel</span>
+    <!-- RIGHT: log -->
+    <div class="log-panel">
+      <div class="log-panel-title">BATTLE LOG</div>
+      <div class="log" id="game-log"></div>
     </div>
-
-    <div class="controls">
-      <span class="turn-info" id="turn-display">Turn 1 — P1 to play</span>
-      <button class="btn btn-primary" id="btn-end-turn">End Turn</button>
-      <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
-    </div>
-
-    <div class="hand-area">
-      <div class="hand-label">YOUR HAND</div>
-      <div class="hand" id="p1-hand"></div>
-    </div>
-
-    <div class="missions-area" id="missions-area"></div>
-
-    <div class="log" id="game-log"></div>
 
   </div>
 

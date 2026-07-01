@@ -7,33 +7,90 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 16px;
-  gap: 12px;
   min-height: 100vh;
 }
 
-/* ── HQ bars ── */
-.hq-bar {
-  width: 100%;
-  max-width: 700px;
+/* ── Game layout (3-column grid, centered) ── */
+.game-layout {
+  display: grid;
+  grid-template-columns: 170px auto 200px;
+  gap: 20px;
+  align-items: start;
+  margin: 0 auto;
+  padding: 24px 0;
+}
+
+/* LEFT: stats panel */
+.stats-panel {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 0;
+}
+.stat-block {
   background: #16213e;
   border-radius: 8px;
-  padding: 8px 16px;
-  font-size: 14px;
+  padding: 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
-.hq-label { font-weight: bold; letter-spacing: 1px; }
-.hq-hp { font-size: 22px; font-weight: bold; color: #e94560; }
-.fuel-display { font-size: 14px; color: #f5a623; }
+.stat-block.active-turn { border: 1px solid #4caf50; }
+.stat-label { font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #888; }
+.stat-hp { font-size: 36px; font-weight: bold; color: #e94560; line-height: 1; }
+.stat-sub { font-size: 9px; color: #444; letter-spacing: 1px; margin-bottom: 6px; }
+.stat-fuel { font-size: 13px; color: #f5a623; }
+
+/* Buttons sandwiched between stats */
+.side-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 0;
+}
+.side-controls .turn-info {
+  font-size: 11px;
+  color: #888;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.side-controls .btn {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+.side-controls .btn-exit {
+  margin-top: 8px;
+  background: #2a2a3a;
+  color: #666;
+}
+
+/* CENTER: board + hand */
+.center-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* RIGHT: log panel */
+.log-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.log-panel-title {
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: #555;
+}
 
 /* ── Board ── */
 .board-area { position: relative; }
 .board {
   display: grid;
-  grid-template-columns: repeat(4, 96px);
-  grid-template-rows: repeat(4, 96px);
+  grid-template-columns: repeat(4, 120px);
+  grid-template-rows: repeat(4, 120px);
   gap: 3px;
   background: #0f3460;
   padding: 6px;
@@ -41,8 +98,8 @@ body {
 }
 
 .tile {
-  width: 96px;
-  height: 96px;
+  width: 120px;
+  height: 120px;
   background: #16213e;
   border: 2px solid #0f3460;
   border-radius: 4px;
@@ -65,10 +122,15 @@ body {
 .tile.selected-unit { border-color: #f5a623; }
 
 /* ── Terrain tile backgrounds ── */
+.tile.terrain-plains { background: #1a1f2e; border-color: #2a3050; }
 .tile.terrain-forest { background: #0d2a10; border-color: #1a4a1a; }
 .tile.terrain-water  { background: #08182a; border-color: #0a2a4a; }
 .tile.terrain-desert { background: #2a1e0a; border-color: #4a3a12; }
 .tile.terrain-city   { background: #1a1a1a; border-color: #333; }
+
+/* Valid-drop overrides terrain backgrounds (must come after terrain rules) */
+.tile.valid-drop { border-color: #4caf50 !important; background: #1a3a1a !important; cursor: crosshair; }
+.tile.valid-drop:hover { border-color: #76c442 !important; background: #213d21 !important; }
 
 .terrain-label {
   position: absolute;
@@ -123,13 +185,13 @@ body {
 
 /* ── Mini card on board ── */
 .board-card {
-  width: 88px;
-  height: 88px;
+  width: 112px;
+  height: 112px;
   border-radius: 3px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-size: 9px;
+  font-size: 10px;
   position: relative;
   border: 2px solid transparent;
 }
@@ -157,10 +219,7 @@ body {
 .armor-pip.spent { color: #2a2a2a; }
 
 /* ── Hand ── */
-.hand-area {
-  width: 100%;
-  max-width: 700px;
-}
+.hand-area { width: 100%; }
 .hand-label { font-size: 11px; color: #888; margin-bottom: 4px; }
 .hand {
   display: flex;
@@ -169,8 +228,8 @@ body {
 }
 
 .hand-card {
-  width: 80px;
-  height: 110px;
+  width: 92px;
+  height: 126px;
   border: 2px solid #333;
   border-radius: 4px;
   background: #16213e;
@@ -203,8 +262,6 @@ body {
 .hc-keyword { font-size: 6px; color: #aaa; padding: 0 3px; }
 .hc-effect { padding: 2px 3px; font-size: 6px; color: #ccc; line-height: 1.3; flex: 1; overflow: hidden; }
 
-/* ── Controls ── */
-.controls { display: flex; gap: 12px; align-items: center; }
 .btn {
   padding: 8px 20px;
   border: none;
@@ -217,18 +274,17 @@ body {
 .btn:hover { opacity: 0.85; }
 .btn-primary { background: #e94560; color: #fff; }
 .btn-secondary { background: #0f3460; color: #eee; }
+.btn-exit { background: #444; color: #ccc; }
 .turn-info { font-size: 13px; color: #aaa; }
 
 /* ── Log ── */
 .log {
-  width: 100%;
-  max-width: 700px;
   background: #0d0d1a;
   border-radius: 4px;
   padding: 8px;
   font-size: 11px;
   color: #888;
-  max-height: 100px;
+  height: 600px;
   overflow-y: auto;
 }
 .log-entry { margin-bottom: 2px; }
@@ -288,7 +344,7 @@ body {
 
 /* ── Missions ── */
 .missions-area {
-  width: 100%; max-width: 700px;
+  width: 100%;
   min-height: 18px;
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
 }

@@ -14,7 +14,7 @@ import {
 import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js';
 import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js';
 import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js';
-import { pushState, subscribeState } from './firebase.js';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -40,12 +40,42 @@ let p1DeckIds = null;
 let p2DeckIds = null;
 let pickerStep = 1;
 
+// Called by P2 once both their deck choice and P1's lobby data are available.
+function tryPushP2Ready() {
+  if (!p2DeckIds || !p1LobbyData) return;
+  const toArr = v => Array.isArray(v) ? v : Object.values(v ?? {});
+  pushState(gameId, {
+    _phase: 'ready',
+    p1Deck: toArr(p1LobbyData.p1Deck),
+    mapId:  p1LobbyData.mapId,
+    p2Deck: p2DeckIds,
+  });
+  document.getElementById('waiting-msg').textContent = 'Waiting for host to start the game...';
+}
+
 document.getElementById('deck-grid').addEventListener('click', e => {
   const option = e.target.closest('.deck-option');
   if (!option) return;
   const deck = DECKS[option.dataset.deck];
   if (!deck) return;
 
+  if (isOnline && myRole === 'p2') {
+    p2DeckIds = [...deck.ids];
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('waiting-screen').style.display = 'flex';
+    document.getElementById('waiting-msg').textContent = 'Connecting...';
+    tryPushP2Ready(); // fires immediately if P1 lobby data already arrived; otherwise waits
+    return;
+  }
+
+  if (isOnline && myRole === 'p1') {
+    p1DeckIds = [...deck.ids];
+    document.getElementById('deck-picker').style.display = 'none';
+    document.getElementById('map-picker').style.display = '';
+    return;
+  }
+
+  // Local play: P1 deck → P2 deck → map
   if (pickerStep === 1) {
     p1DeckIds = [...deck.ids];
     pickerStep = 2;
@@ -61,7 +91,24 @@ document.getElementById('deck-grid').addEventListener('click', e => {
 document.getElementById('map-grid').addEventListener('click', e => {
   const option = e.target.closest('.deck-option');
   if (!option || !option.dataset.map) return;
-  startGame(p1DeckIds, p2DeckIds, option.dataset.map);
+  const mapId = option.dataset.map;
+
+  if (isOnline && myRole === 'p1') {
+    // Push lobby state to games/${gameId} and wait for P2's ready response
+    pushState(gameId, { _phase: 'lobby', p1Deck: p1DeckIds, mapId });
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('waiting-screen').style.display = 'flex';
+    document.getElementById('waiting-msg').textContent = 'Waiting for Player 2 to choose their deck...';
+    subscribeState(gameId, data => {
+      if (state) return; // already started
+      if (data._phase !== 'ready' || !data.p2Deck) return;
+      const toArr = v => Array.isArray(v) ? v : Object.values(v ?? {});
+      startGame(toArr(data.p1Deck), toArr(data.p2Deck), data.mapId);
+    });
+    return;
+  }
+
+  startGame(p1DeckIds, p2DeckIds, mapId);
 });
 
 // ── Online mode ───────────────────────────────────────────────────────────────
@@ -73,16 +120,19 @@ let myLastPushId = null;
 
 // ── Game state ────────────────────────────────────────────────────────────────
 let state = null;
+let p1LobbyData = null; // P2 stores P1's lobby push until P2 has also picked their deck
 let uiState = "idle";
 let selectedHandCardId = null;
 let pendingAttackerKey = null;
 let attackedThisTurn = new Map(); // tileKey → attack count used this turn
 let pendingCommandId = null;       // card ID of command awaiting a board target
+let preCommandState = null;        // state snapshot before command-targeting started (for cancel)
 let gameOver = false;
 
 // ── Start game ────────────────────────────────────────────────────────────────
 function startGame(p1Ids, p2Ids, mapId) {
   document.getElementById('lobby').style.display = 'none';
+  document.getElementById('waiting-screen').style.display = 'none';
   document.getElementById('game-area').style.display = 'flex';
 
   state = createInitialState(p1Ids, p2Ids, mapId);
@@ -97,6 +147,10 @@ function startGame(p1Ids, p2Ids, mapId) {
   if (isOnline) {
     pushStateIfOnline(state);
     subscribeState(gameId, remoteState => {
+      if (remoteState._playerLeft && remoteState._playerLeft !== myRole) {
+        showDisconnectScreen(remoteState._playerLeft);
+        return;
+      }
       if (remoteState._pushId === myLastPushId) return; // filter own echo
       receiveRemoteState(remoteState);
     });
@@ -111,7 +165,7 @@ function getValidTiles() {
   for (let r = 0; r < 4; r++) {
     for (let c = 0; c < 4; c++) {
       const k = tileKey(r, c);
-      if (state.board[k]) continue;
+      if (state.board[k] || state.objectives[k]) continue;
       const terrain = getTerrain(state.mapId, r, c);
       if (canPlaceOnTerrain(card, terrain)) valid.add(k);
     }
@@ -241,6 +295,7 @@ function receiveRemoteState(remoteState) {
   selectedHandCardId = null;
   pendingAttackerKey = null;
   pendingCommandId = null;
+  preCommandState = null;
   attackedThisTurn = new Map();
   redraw();
 }
@@ -321,7 +376,7 @@ document.getElementById('board').addEventListener('click', e => {
 
   // PLACING
   if (uiState === "placing") {
-    if (state.board[clickedKey]) return;
+    if (state.board[clickedKey] || state.objectives[clickedKey]) return;
 
     const active = state.initiative;
     const card = CARD_BY_ID[selectedHandCardId];
@@ -730,16 +785,19 @@ function getCommandTargets(commandId) {
 }
 
 // Deduct fuel, remove card from hand, enter command-targeting mode.
+// State is updated locally only — no Firebase push until target is chosen (so cancel can restore).
 function startCommandTargeting(cardId) {
   const active = state.initiative;
   const card = CARD_BY_ID[cardId];
   const handAfter = [...state[active].hand];
   const idx = handAfter.indexOf(cardId);
   if (idx !== -1) handAfter.splice(idx, 1);
-  const s = { ...state, [active]: { ...state[active], fuel: state[active].fuel - card.cost, hand: handAfter } };
+  preCommandState = state;
+  state = { ...state, [active]: { ...state[active], fuel: state[active].fuel - card.cost, hand: handAfter } };
   pendingCommandId = cardId;
   uiState = 'command-targeting';
-  commitState(s, [`${card.name}: choose a target`]);
+  appendLog([`${card.name}: choose a target`]);
+  redraw();
 }
 
 // Apply the effect of a targeted command to the clicked tile.
@@ -767,11 +825,13 @@ function applyCommandEffect(commandId, targetKey) {
       if (tankTargets.length === 0) {
         log.push(`${card.name}: ${unitName} has no adjacent targets`);
         pendingCommandId = null;
+        preCommandState = null;
         uiState = 'idle';
         commitState(s, log);
         return;
       }
       pendingCommandId = null;
+      preCommandState = null;
       uiState = 'targeting';
       pendingAttackerKey = targetKey;
       log.push(`${card.name}: ${unitName} may attack immediately`);
@@ -842,6 +902,7 @@ function applyCommandEffect(commandId, targetKey) {
   }
 
   pendingCommandId = null;
+  preCommandState = null;
   uiState = 'idle';
   commitState(s, log);
   checkWin();
@@ -1035,21 +1096,56 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
 // ── Cancel ────────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-cancel').addEventListener('click', () => {
+  if (preCommandState) {
+    state = preCommandState;
+    preCommandState = null;
+  }
   uiState = "idle";
   selectedHandCardId = null;
   pendingAttackerKey = null;
+  pendingCommandId = null;
   if (state) redraw();
 });
 
+// ── Exit ──────────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-exit').addEventListener('click', async () => {
+  if (!confirm('Exit to main menu? Current game will be lost.')) return;
+  if (isOnline && gameId && myRole) await setPlayerLeft(gameId, myRole);
+  window.location.href = '/';
+});
+
+function showDisconnectScreen(who) {
+  gameOver = true;
+  document.getElementById('end-winner').textContent = `${who.toUpperCase()} LEFT THE GAME`;
+  document.getElementById('end-subtitle').textContent = 'OPPONENT DISCONNECTED';
+  document.getElementById('end-screen').style.display = 'flex';
+}
+
 // ── P2 online init ────────────────────────────────────────────────────────────
-// P1 goes through the normal lobby. P2 skips it and waits for host to start.
+// P2 sees the deck picker and subscribes to games/${gameId} for two things:
+//   1. P1's lobby push (_phase:'lobby') → store it, push ready state once deck chosen
+//   2. Full game state (no _phase) → game has started, receive it
 if (isOnline && myRole === 'p2') {
-  document.getElementById('lobby').style.display = 'none';
-  document.getElementById('waiting-screen').style.display = 'flex';
-  subscribeState(gameId, remoteState => {
-    if (remoteState._pushId === myLastPushId) return;
-    document.getElementById('waiting-screen').style.display = 'none';
-    document.getElementById('game-area').style.display = 'flex';
-    receiveRemoteState(remoteState);
+  document.getElementById('picker-label').textContent = 'YOUR DECK — CHOOSE A DECK';
+  subscribeState(gameId, data => {
+    if (data._playerLeft && data._playerLeft !== myRole && state) {
+      showDisconnectScreen(data._playerLeft);
+      return;
+    }
+    if (data._phase === 'lobby' && !p1LobbyData) {
+      p1LobbyData = data;
+      tryPushP2Ready(); // fires if P2 already picked; otherwise waits
+    } else if (data.turn !== undefined && !data._phase) {
+      if (!state) {
+        // First game state arrival — show game area
+        document.getElementById('waiting-screen').style.display = 'none';
+        document.getElementById('game-area').style.display = 'flex';
+      }
+      // Receive all subsequent state pushes (filter own echoes)
+      if (data._pushId !== myLastPushId) {
+        receiveRemoteState(data);
+      }
+    }
   });
 }

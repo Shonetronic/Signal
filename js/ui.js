@@ -2,7 +2,7 @@ import { CARD_BY_ID } from './cards.js';
 import { getKeywords, maxArmorHits } from './state.js';
 import { getTerrain } from './maps.js';
 
-const TERRAIN_SHORT = { forest: 'F', water: 'W', desert: 'D', city: 'C' };
+const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
 // ── Board rendering ───────────────────────────────────────────────────────────
 
@@ -25,13 +25,11 @@ export function renderBoard(state, selectedTileKey, validDropKeys) {
 
       // Terrain type
       const terrainType = getTerrain(state.mapId, r, c);
-      if (terrainType !== 'plains') {
-        tile.classList.add(`terrain-${terrainType}`);
-        const tLbl = document.createElement('div');
-        tLbl.className = 'terrain-label';
-        tLbl.textContent = TERRAIN_SHORT[terrainType] ?? terrainType[0].toUpperCase();
-        tile.appendChild(tLbl);
-      }
+      tile.classList.add(`terrain-${terrainType}`);
+      const tLbl = document.createElement('div');
+      tLbl.className = 'terrain-label';
+      tLbl.textContent = TERRAIN_SHORT[terrainType] ?? terrainType[0].toUpperCase();
+      tile.appendChild(tLbl);
 
       // Objective label + tooltip
       if (obj) {
@@ -186,10 +184,17 @@ export function renderHand(handCardIds, containerId, selectedCardId) {
 export function renderHQ(state) {
   document.getElementById('p1-hq').textContent = state.p1.hq;
   document.getElementById('p2-hq').textContent = state.p2.hq;
-  document.getElementById('p1-fuel').textContent = `${state.p1.fuel}/6 Fuel`;
-  document.getElementById('p2-fuel').textContent = `${state.p2.fuel}/6 Fuel`;
+  document.getElementById('p1-fuel').textContent = `${state.p1.fuel} / 6 Fuel`;
+  document.getElementById('p2-fuel').textContent = `${state.p2.fuel} / 6 Fuel`;
   document.getElementById('turn-display').textContent =
     `Turn ${state.turn} — ${state.initiative.toUpperCase()} to play`;
+
+  const p1Block = document.getElementById('stat-p1');
+  const p2Block = document.getElementById('stat-p2');
+  if (p1Block && p2Block) {
+    p1Block.classList.toggle('active-turn', state.initiative === 'p1');
+    p2Block.classList.toggle('active-turn', state.initiative === 'p2');
+  }
 }
 
 // ── Log ───────────────────────────────────────────────────────────────────────

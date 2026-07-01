@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getDatabase, ref, set, get, onValue } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { getDatabase, ref, set, get, onValue, update } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 // Paste your Firebase project config here (from Firebase Console → Project Settings)
 const FIREBASE_CONFIG = {
@@ -33,6 +33,22 @@ export async function fetchState(gameId) {
 export function subscribeState(gameId, callback) {
   const r = ref(db, `games/${gameId}`);
   return onValue(r, snap => {
+    if (snap.exists()) callback(snap.val());
+  });
+}
+
+export async function setPlayerLeft(gameId, role) {
+  await update(ref(db, `games/${gameId}`), { _playerLeft: role });
+}
+
+// Lobby: pre-game coordination (deck choices, map). Uses update() so both
+// players can write their own fields without overwriting each other's.
+export async function updateLobby(gameId, data) {
+  await update(ref(db, `lobbies/${gameId}`), data);
+}
+
+export function subscribeLobby(gameId, callback) {
+  return onValue(ref(db, `lobbies/${gameId}`), snap => {
     if (snap.exists()) callback(snap.val());
   });
 }
