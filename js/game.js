@@ -10,6 +10,9 @@ import {
   getKeywords,
   applyHit,
   maxArmorHits,
+  getSideValue,
+  attackBeats,
+  oppositeDir,
 } from './state.js';
 import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js';
 import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js';
@@ -127,18 +130,109 @@ let pendingAttackerKey = null;
 let attackedThisTurn = new Map(); // tileKey → attack count used this turn
 let pendingCommandId = null;       // card ID of command awaiting a board target
 let preCommandState = null;        // state snapshot before command-targeting started (for cancel)
+let lastChangedKeys = new Set();   // tiles changed by opponent's last move (cleared on own action)
 let gameOver = false;
+
+// ── Mulligan ─────────────────────────────────────────────────────────────────
+
+let mulliganSelected = new Set();
+
+function applyMulligan(s, role, indices) {
+  if (!indices.length) return s;
+  const ps = { ...s[role] };
+  const putBack = indices.map(i => ps.hand[i]);
+  const keep = ps.hand.filter((_, i) => !indices.includes(i));
+  const newDeck = [...putBack, ...ps.deck].sort(() => Math.random() - 0.5);
+  const drawn = newDeck.slice(0, putBack.length);
+  return { ...s, [role]: { ...ps, hand: [...keep, ...drawn], deck: newDeck.slice(putBack.length) } };
+}
+
+function renderMulliganCards(hand) {
+  const container = document.getElementById('mulligan-hand');
+  container.innerHTML = '';
+  hand.forEach((cardId, i) => {
+    const card = CARD_BY_ID[cardId];
+    if (!card) return;
+    const div = document.createElement('div');
+    div.className = `hand-card mulligan-card${mulliganSelected.has(i) ? ' mulligan-discard' : ''}`;
+    if (card.type === 'unit') {
+      div.innerHTML = `
+        <div class="hc-header">${card.name}</div>
+        <div class="hc-cost">${card.cost} ⛽</div>
+        <div class="hc-type">${card.cls}</div>
+        <div class="hc-dirs">
+          <div></div><div>${card.n}</div><div></div>
+          <div>${card.w}</div><div style="color:#444">·</div><div>${card.e}</div>
+          <div></div><div>${card.s}</div><div></div>
+        </div>
+        <div class="hc-keyword">${card.keyword || ''}</div>`;
+    } else {
+      div.innerHTML = `
+        <div class="hc-header">${card.name}</div>
+        <div class="hc-cost">${card.cost} ⛽</div>
+        <div class="hc-type">${card.type}</div>
+        <div class="hc-effect">${card.effect || card.req || ''}</div>`;
+    }
+    div.addEventListener('click', () => {
+      if (mulliganSelected.has(i)) mulliganSelected.delete(i);
+      else mulliganSelected.add(i);
+      renderMulliganCards(hand);
+    });
+    container.appendChild(div);
+  });
+}
+
+function showMulligan(label, hand, onConfirm) {
+  mulliganSelected = new Set();
+  document.getElementById('mulligan-label').textContent = label;
+  renderMulliganCards(hand);
+  document.getElementById('mulligan-screen').style.display = 'flex';
+  document.getElementById('btn-mulligan-confirm').onclick = () => {
+    document.getElementById('mulligan-screen').style.display = 'none';
+    onConfirm([...mulliganSelected]);
+  };
+  document.getElementById('btn-mulligan-keep').onclick = () => {
+    document.getElementById('mulligan-screen').style.display = 'none';
+    onConfirm([]);
+  };
+}
 
 // ── Start game ────────────────────────────────────────────────────────────────
 function startGame(p1Ids, p2Ids, mapId) {
+  let s = createInitialState(p1Ids, p2Ids, mapId);
+  s = { ...s, objectives: pickObjectives(mapId) };
+
+  if (isOnline && myRole === 'p1') {
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('waiting-screen').style.display = 'none';
+    showMulligan('YOUR OPENING HAND', s.p1.hand, indices => {
+      s = applyMulligan(s, 'p1', indices);
+      finishStartGame(s, mapId);
+    });
+    return;
+  }
+
+  if (!isOnline) {
+    document.getElementById('lobby').style.display = 'none';
+    showMulligan('P1 — OPENING HAND', s.p1.hand, indices1 => {
+      s = applyMulligan(s, 'p1', indices1);
+      showMulligan('P2 — OPENING HAND', s.p2.hand, indices2 => {
+        s = applyMulligan(s, 'p2', indices2);
+        finishStartGame(s, mapId);
+      });
+    });
+    return;
+  }
+
+  finishStartGame(s, mapId);
+}
+
+function finishStartGame(s, mapId) {
   document.getElementById('lobby').style.display = 'none';
   document.getElementById('waiting-screen').style.display = 'none';
   document.getElementById('game-area').style.display = 'flex';
 
-  state = createInitialState(p1Ids, p2Ids, mapId);
-  state = { ...state, objectives: pickObjectives(mapId) };
-  state = startOfTurn(state);
-
+  state = startOfTurn(s);
   const mapName = MAPS[mapId].name;
   state = { ...state, log: [`Game started on ${mapName} — P1 goes first.`] };
   appendLog(state.log);
@@ -151,7 +245,7 @@ function startGame(p1Ids, p2Ids, mapId) {
         showDisconnectScreen(remoteState._playerLeft);
         return;
       }
-      if (remoteState._pushId === myLastPushId) return; // filter own echo
+      if (remoteState._pushId === myLastPushId) return;
       receiveRemoteState(remoteState);
     });
   }
@@ -193,9 +287,9 @@ function redraw() {
   renderHQ(state);
 
   if (uiState === "placing") {
-    renderBoard(state, null, getValidTiles());
+    renderBoard(state, null, getValidTiles(), lastChangedKeys);
   } else {
-    renderBoard(state, null, null);
+    renderBoard(state, null, null, lastChangedKeys);
   }
 
   if (uiState === "targeting" && pendingAttackerKey) {
@@ -223,31 +317,19 @@ function redraw() {
 
   const handRole = myRole ?? state.initiative;
   renderHand(state[handRole].hand, 'p1-hand', selectedHandCardId);
-
-  // Missions display
-  const activeMissions = state[handRole].missions ?? [];
-  const missionsEl = document.getElementById('missions-area');
-  if (missionsEl) {
-    if (activeMissions.length === 0) {
-      missionsEl.innerHTML = '';
-    } else {
-      missionsEl.innerHTML = '<span class="missions-label">MISSIONS: </span>' +
-        activeMissions.map(m => {
-          const c = CARD_BY_ID[m.cardId];
-          return `<span class="mission-badge">${c?.name ?? '?'} (${m.turnsRemaining}t)</span>`;
-        }).join(' ');
-    }
-  }
+  renderMissionsPanel(state);
 
   if (isOnline) {
     const isMyTurn = state.initiative === myRole;
+    const round = Math.ceil(state.turn / 2);
     document.getElementById('turn-display').textContent = isMyTurn
-      ? `Turn ${state.turn} — YOUR TURN`
-      : `Turn ${state.turn} — WAITING FOR OPPONENT`;
+      ? `Round ${round} — YOUR TURN`
+      : `Round ${round} — WAITING FOR OPPONENT`;
   }
 }
 
 function commitState(newState, logLines) {
+  lastChangedKeys = new Set(); // player acted — clear opponent highlights
   state = { ...newState, log: [...(newState.log ?? []), ...(logLines ?? [])] };
   if (logLines?.length) appendLog(logLines);
   redraw();
@@ -288,6 +370,16 @@ function normalizeFirebaseState(raw) {
 function receiveRemoteState(remoteState) {
   const normalized = normalizeFirebaseState(remoteState);
   const prevLogLen = state?.log?.length ?? 0;
+  // Track tiles changed by the opponent so we can highlight them
+  if (state?.board) {
+    lastChangedKeys = new Set();
+    const allKeys = new Set([...Object.keys(state.board), ...Object.keys(normalized.board ?? {})]);
+    for (const key of allKeys) {
+      if (JSON.stringify(state.board[key]) !== JSON.stringify((normalized.board ?? {})[key])) {
+        lastChangedKeys.add(key);
+      }
+    }
+  }
   state = normalized;
   const newEntries = (normalized.log ?? []).slice(prevLogLen);
   if (newEntries.length) appendLog(newEntries);
@@ -1075,7 +1167,9 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
 
   let newState = endTurn(s);                             // swap initiative, increment turn
   const newActive = newState.initiative;
-  newState = { ...newState, [newActive]: drawCards(newState[newActive], 1) };
+  if (newState.turn > 2) {                               // skip P2's first turn — they start with 5 already
+    newState = { ...newState, [newActive]: drawCards(newState[newActive], 1) };
+  }
   newState = startOfTurn(newState);                      // gain fuel for new active player
   newState = updateObjectiveLevels(newState);            // escalate objective levels
   newState = checkObjectiveControl(newState);            // check majority-adjacent control
@@ -1088,7 +1182,8 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   pendingAttackerKey = null;
   pendingCommandId = null;
 
-  const turnLog = [...endMissionLog, `--- Turn ${newState.turn} — ${newState.initiative.toUpperCase()} ---`, ...effectLog];
+  const newRound = Math.ceil(newState.turn / 2);
+  const turnLog = [...endMissionLog, `--- Round ${newRound} — ${newState.initiative.toUpperCase()} ---`, ...effectLog];
   commitState(newState, turnLog);
   checkWin();
 });
@@ -1112,7 +1207,7 @@ document.getElementById('btn-cancel').addEventListener('click', () => {
 document.getElementById('btn-exit').addEventListener('click', async () => {
   if (!confirm('Exit to main menu? Current game will be lost.')) return;
   if (isOnline && gameId && myRole) await setPlayerLeft(gameId, myRole);
-  window.location.href = '/';
+  window.location.href = 'index.html';
 });
 
 function showDisconnectScreen(who) {
@@ -1121,6 +1216,142 @@ function showDisconnectScreen(who) {
   document.getElementById('end-subtitle').textContent = 'OPPONENT DISCONNECTED';
   document.getElementById('end-screen').style.display = 'flex';
 }
+
+// ── Card preview panel ────────────────────────────────────────────────────────
+
+function getDir(fromKey, toKey) {
+  const [r1, c1] = fromKey.split(',').map(Number);
+  const [r2, c2] = toKey.split(',').map(Number);
+  if (r2 < r1) return 'n';
+  if (r2 > r1) return 's';
+  if (c2 < c1) return 'w';
+  return 'e';
+}
+
+function showCardPreview(cardId) {
+  const card = CARD_BY_ID[cardId];
+  if (!card) return;
+  document.getElementById('cp-name').textContent = card.name;
+  document.getElementById('cp-badge').textContent = `${card.cost} Fuel · ${card.cls || card.type}`;
+  document.getElementById('cp-badge').className = 'cp-badge';
+  if (card.type === 'unit') {
+    document.getElementById('cp-dirs').innerHTML =
+      `<div class="cp-dir-row"><span class="cp-dl">N</span><span class="cp-dv">${card.n}</span></div>` +
+      `<div class="cp-dir-row"><span class="cp-dl">E</span><span class="cp-dv">${card.e}</span></div>` +
+      `<div class="cp-dir-row"><span class="cp-dl">S</span><span class="cp-dv">${card.s}</span></div>` +
+      `<div class="cp-dir-row"><span class="cp-dl">W</span><span class="cp-dv">${card.w}</span></div>`;
+    document.getElementById('cp-keyword').textContent = card.keyword ? `◆ ${card.keyword}` : '';
+    document.getElementById('cp-effect').textContent = '';
+  } else {
+    document.getElementById('cp-dirs').innerHTML = '';
+    document.getElementById('cp-keyword').textContent = '';
+    document.getElementById('cp-effect').textContent = card.effect || card.req || '';
+  }
+  document.getElementById('card-preview').style.display = 'flex';
+  document.getElementById('preview-hint').style.display = 'none';
+}
+
+function showAttackPreview(attackerKey, targetKey) {
+  const attUnit = state.board[attackerKey];
+  const defUnit = state.board[targetKey];
+  if (!attUnit || !defUnit) return;
+  const dir = getDir(attackerKey, targetKey);
+  const oppDir = oppositeDir(dir);
+  const attVal = getSideValue(attUnit, dir);
+  const defVal = getSideValue(defUnit, oppDir);
+  const hits = attackBeats(attUnit, dir, defUnit);
+  const attCard = CARD_BY_ID[attUnit.cardId];
+  const defCard = CARD_BY_ID[defUnit.cardId];
+  let outcome;
+  if (!hits) {
+    outcome = 'Attack blocked — no effect';
+  } else {
+    const armor = maxArmorHits(defUnit);
+    if (defUnit.armorHits < armor) outcome = 'Armor absorbs — no HQ damage';
+    else if (defUnit.state === 'normal') outcome = 'Suppressed — 1 HQ damage to defender';
+    else outcome = 'Destroyed — 2 HQ damage to defender';
+  }
+  const badge = document.getElementById('cp-badge');
+  document.getElementById('cp-name').textContent = `${attCard?.name ?? '?'} → ${defCard?.name ?? '?'}`;
+  badge.textContent = hits ? 'HIT' : 'BLOCKED';
+  badge.className = `cp-badge ${hits ? 'hit' : 'block'}`;
+  document.getElementById('cp-dirs').innerHTML =
+    `<div class="cp-dir-row"><span class="cp-dl">${dir.toUpperCase()}</span><span class="cp-dv">${attVal}</span></div>` +
+    `<div class="cp-dir-row"><span class="cp-dl">${oppDir.toUpperCase()}</span><span class="cp-dv">${defVal}</span></div>`;
+  document.getElementById('cp-keyword').textContent = '';
+  document.getElementById('cp-effect').textContent = outcome;
+  document.getElementById('card-preview').style.display = 'flex';
+  document.getElementById('preview-hint').style.display = 'none';
+}
+
+function hideCardPreview() {
+  document.getElementById('card-preview').style.display = 'none';
+  document.getElementById('preview-hint').style.display = 'block';
+}
+
+// ── Missions side panel ───────────────────────────────────────────────────────
+
+function getMissionCounter(s, role, cardId) {
+  switch (cardId) {
+    case 25: return `Kills this turn: ${s[role].killsThisTurn ?? 0} / 2`;
+    case 81: return `Total kills: ${s[role].totalKills ?? 0} / 3`;
+    case 56: return 'Kill with Aircraft to complete';
+    case 84: return 'Kill with Heavy Armor to complete';
+    default: return null;
+  }
+}
+
+function renderMissionsPanel(s) {
+  const panel = document.getElementById('missions-side');
+  if (!panel) return;
+  const role = myRole ?? s.initiative;
+  const missions = s[role]?.missions ?? [];
+  if (missions.length === 0) {
+    panel.innerHTML = '<div class="missions-empty">No active<br>missions</div>';
+    return;
+  }
+  panel.innerHTML = missions.map(m => {
+    const card = CARD_BY_ID[m.cardId];
+    if (!card) return '';
+    const counter = getMissionCounter(s, role, m.cardId);
+    const turns = m.turnsRemaining;
+    return `<div class="mission-detail">
+      <div class="md-name">${card.name}</div>
+      <div class="md-turns">${turns} turn${turns !== 1 ? 's' : ''} remaining</div>
+      ${counter ? `<div class="md-counter">${counter}</div>` : ''}
+      <div class="md-label">CONDITION</div>
+      <div class="md-req">${card.req || '—'}</div>
+      <div class="md-label">REWARD</div>
+      <div class="md-reward">${card.effect || '—'}</div>
+    </div>`;
+  }).join('');
+}
+
+// Hand hover → card preview
+document.getElementById('p1-hand').addEventListener('mouseover', e => {
+  const cardEl = e.target.closest('.hand-card');
+  if (cardEl) showCardPreview(Number(cardEl.dataset.cardId));
+});
+document.getElementById('p1-hand').addEventListener('mouseleave', hideCardPreview);
+
+// Board hover → attack prediction when in targeting mode
+document.getElementById('board').addEventListener('mouseover', e => {
+  if (uiState !== 'targeting' || !pendingAttackerKey) return;
+  const tile = e.target.closest('.tile');
+  if (tile?.classList.contains('targetable')) showAttackPreview(pendingAttackerKey, tile.dataset.key);
+});
+document.getElementById('board').addEventListener('mouseleave', () => {
+  if (uiState === 'targeting') hideCardPreview();
+});
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  if (gameOver || !state) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'Escape') document.getElementById('btn-cancel').click();
+  if (e.key === 'e' || e.key === 'E') document.getElementById('btn-end-turn').click();
+});
 
 // ── P2 online init ────────────────────────────────────────────────────────────
 // P2 sees the deck picker and subscribes to games/${gameId} for two things:
@@ -1138,11 +1369,19 @@ if (isOnline && myRole === 'p2') {
       tryPushP2Ready(); // fires if P2 already picked; otherwise waits
     } else if (data.turn !== undefined && !data._phase) {
       if (!state) {
-        // First game state arrival — show game area
+        // First game state arrival — show P2 mulligan before entering game
+        const normalized = normalizeFirebaseState(data);
         document.getElementById('waiting-screen').style.display = 'none';
-        document.getElementById('game-area').style.display = 'flex';
+        showMulligan('YOUR OPENING HAND', normalized.p2.hand, indices => {
+          state = applyMulligan(normalized, 'p2', indices);
+          document.getElementById('game-area').style.display = 'flex';
+          appendLog(state.log ?? []);
+          redraw();
+          if (indices.length > 0) pushStateIfOnline(state); // sync mulliganed hand to Firebase
+        });
+        return;
       }
-      // Receive all subsequent state pushes (filter own echoes)
+      // Ongoing updates
       if (data._pushId !== myLastPushId) {
         receiveRemoteState(data);
       }

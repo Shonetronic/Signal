@@ -9,7 +9,7 @@ const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city:
 // Render the 4x4 board from state into the #board element.
 // selectedTileKey: tile currently selected/highlighted (string or null)
 // validDropKeys: Set of tile keys where the selected hand card can be placed (or null)
-export function renderBoard(state, selectedTileKey, validDropKeys) {
+export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null) {
   const board = document.getElementById('board');
   board.innerHTML = '';
 
@@ -31,9 +31,13 @@ export function renderBoard(state, selectedTileKey, validDropKeys) {
       tLbl.textContent = TERRAIN_SHORT[terrainType] ?? terrainType[0].toUpperCase();
       tile.appendChild(tLbl);
 
+      if (changedKeys?.has(key)) tile.classList.add('changed-tile');
+
       // Objective label + tooltip
       if (obj) {
         tile.classList.add('objective-tile');
+        if (obj.controller === 'p1') tile.classList.add('obj-ctrl-p1');
+        else if (obj.controller === 'p2') tile.classList.add('obj-ctrl-p2');
         const objCard = CARD_BY_ID[obj.cardId];
 
         // Small corner label
@@ -150,7 +154,7 @@ export function renderHand(handCardIds, containerId, selectedCardId) {
     if (card.type === 'unit') {
       div.innerHTML = `
         <div class="hc-header">${card.name}</div>
-        <div class="hc-cost">${card.cost} ⛽ <span style="font-size:9px;color:#888">AP${card.ap}</span></div>
+        <div class="hc-cost">${card.cost} ⛽</div>
         <div class="hc-type">${card.cls}</div>
         <div class="hc-dirs">
           <div></div><div>${card.n}</div><div></div>
@@ -186,8 +190,9 @@ export function renderHQ(state) {
   document.getElementById('p2-hq').textContent = state.p2.hq;
   document.getElementById('p1-fuel').textContent = `${state.p1.fuel} / 6 Fuel`;
   document.getElementById('p2-fuel').textContent = `${state.p2.fuel} / 6 Fuel`;
+  const round = Math.ceil(state.turn / 2);
   document.getElementById('turn-display').textContent =
-    `Turn ${state.turn} — ${state.initiative.toUpperCase()} to play`;
+    `Round ${round} — ${state.initiative.toUpperCase()} to play`;
 
   const p1Block = document.getElementById('stat-p1');
   const p2Block = document.getElementById('stat-p2');
@@ -206,10 +211,41 @@ export function appendLog(entries) {
   entries.forEach(text => {
     const div = document.createElement('div');
     div.className = 'log-entry';
-    // Light markup: turn markers and win messages get extra class
-    if (text.startsWith('---')) div.classList.add('turn-marker');
-    if (text.includes('wins!')) div.classList.add('win-msg');
-    if (text.startsWith('Placed')) div.classList.add('place-msg');
+
+    if (text.startsWith('---')) {
+      div.classList.add('turn-marker');
+    } else if (text.includes('wins!')) {
+      div.classList.add('win-msg');
+    } else if (
+      text.includes('Not enough Fuel') ||
+      text.includes('cannot enter') ||
+      text.includes('no valid') ||
+      text.includes('No valid targets') ||
+      text.includes('no friendly') ||
+      text.includes('not yet implemented')
+    ) {
+      div.classList.add('log-warn');
+    } else if (text.includes('Destroyed') || text.includes('HQ damage') || text.includes('HQ dmg')) {
+      div.classList.add('log-damage');
+    } else if (text.includes('Suppressed') && !text.includes('un-suppressed')) {
+      div.classList.add('log-suppressed');
+    } else if (text.includes('armor absorbed')) {
+      div.classList.add('log-absorbed');
+    } else if (text.includes('COMPLETE')) {
+      div.classList.add('log-mission');
+    } else if (text.includes('mission active') || /L[1-4]:/.test(text)) {
+      div.classList.add('log-objective');
+    } else if (
+      text.includes('un-suppressed') ||
+      text.includes('gains') ||
+      text.includes('buffed') ||
+      text.includes('Draw') ||
+      text.startsWith('Placed') ||
+      (text.includes('+') && (text.includes('Fuel') || text.includes('HQ') || text.includes('sides') || text.includes('HP')))
+    ) {
+      div.classList.add('log-positive');
+    }
+
     div.textContent = text;
     log.appendChild(div);
   });

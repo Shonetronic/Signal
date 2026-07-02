@@ -67,6 +67,18 @@
     </div>
   </div>
 
+  <!-- ── MULLIGAN SCREEN ── -->
+  <div id="mulligan-screen" style="display:none; flex-direction:column; align-items:center; gap:24px; padding:56px 16px;">
+    <div class="lobby-title">SIGNAL</div>
+    <div class="picker-label" id="mulligan-label">OPENING HAND</div>
+    <div style="font-size:12px; color:#5a4a30; text-align:center; letter-spacing:1px;">Click cards to mark for replacement — you may replace any number, once.</div>
+    <div class="mulligan-hand" id="mulligan-hand"></div>
+    <div style="display:flex; gap:12px;">
+      <button class="btn btn-primary" id="btn-mulligan-confirm">Confirm</button>
+      <button class="btn btn-secondary" id="btn-mulligan-keep">Keep All</button>
+    </div>
+  </div>
+
   <!-- ── WAITING SCREEN (P2 online, waiting for host to start) ── -->
   <div id="waiting-screen" style="display:none; flex-direction:column; align-items:center; gap:24px; padding:80px 16px;">
     <div class="lobby-title">SIGNAL</div>
@@ -79,53 +91,80 @@
     <div class="end-content">
       <div class="end-winner" id="end-winner"></div>
       <div class="end-subtitle" id="end-subtitle">HQ DESTROYED</div>
-      <button class="btn btn-primary" onclick="window.location.href='/'">Main Menu</button>
+      <button class="btn btn-primary" onclick="window.location.href='index.html'">Main Menu</button>
     </div>
   </div>
 
   <!-- ── GAME AREA ── -->
   <div id="game-area" class="game-layout" style="display:none">
 
-    <!-- LEFT: stats + controls sandwiched between -->
-    <div class="stats-panel">
-      <div class="stat-block" id="stat-p2">
-        <div class="stat-label">P2</div>
-        <div class="stat-hp" id="p2-hq">20</div>
-        <div class="stat-sub">HQ Health</div>
-        <div class="stat-fuel" id="p2-fuel">0 / 6 Fuel</div>
+    <!-- BOARD ROW: preview | stats | board | log | missions -->
+    <div class="board-row">
+
+      <!-- FAR LEFT: large card preview panel -->
+      <div class="preview-panel">
+        <div class="preview-panel-title">CARD DETAIL</div>
+        <div class="preview-hint" id="preview-hint">hover a card<br>to preview</div>
+        <div id="card-preview" class="card-preview">
+          <div class="cp-name" id="cp-name"></div>
+          <div class="cp-badge" id="cp-badge"></div>
+          <div class="cp-dirs" id="cp-dirs"></div>
+          <div class="cp-keyword" id="cp-keyword"></div>
+          <div class="cp-effect" id="cp-effect"></div>
+        </div>
       </div>
 
-      <div class="side-controls">
-        <span class="turn-info" id="turn-display">Turn 1 — P1 to play</span>
-        <button class="btn btn-primary" id="btn-end-turn">End Turn</button>
-        <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
-        <button class="btn btn-exit" id="btn-exit">Exit</button>
+      <!-- STATS + CONTROLS -->
+      <div class="stats-panel">
+        <div class="stat-block" id="stat-p2">
+          <div class="stat-label">P2</div>
+          <div class="stat-hp" id="p2-hq">20</div>
+          <div class="stat-sub">HQ Health</div>
+          <div class="stat-fuel" id="p2-fuel">0 / 6 Fuel</div>
+        </div>
+
+        <div class="side-controls">
+          <span class="turn-info" id="turn-display">Turn 1 — P1 to play</span>
+          <button class="btn btn-primary" id="btn-end-turn">End Turn</button>
+          <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+          <button class="btn btn-exit" id="btn-exit">Exit</button>
+        </div>
+
+        <div class="stat-block" id="stat-p1">
+          <div class="stat-label">P1</div>
+          <div class="stat-hp" id="p1-hq">20</div>
+          <div class="stat-sub">HQ Health</div>
+          <div class="stat-fuel" id="p1-fuel">0 / 6 Fuel</div>
+        </div>
       </div>
 
-      <div class="stat-block" id="stat-p1">
-        <div class="stat-label">P1</div>
-        <div class="stat-hp" id="p1-hq">20</div>
-        <div class="stat-sub">HQ Health</div>
-        <div class="stat-fuel" id="p1-fuel">0 / 6 Fuel</div>
-      </div>
-    </div>
-
-    <!-- CENTER: board + hand + missions -->
-    <div class="center-panel">
+      <!-- BOARD -->
       <div class="board-area">
         <div class="board" id="board"></div>
       </div>
-      <div class="hand-area">
-        <div class="hand-label">YOUR HAND</div>
-        <div class="hand" id="p1-hand"></div>
+
+      <!-- LOG -->
+      <div class="log-panel">
+        <div class="log-panel-title">BATTLE LOG</div>
+        <div class="log" id="game-log"></div>
       </div>
-      <div class="missions-area" id="missions-area"></div>
+
+      <!-- FAR RIGHT: active missions panel -->
+      <div class="missions-side-panel">
+        <div class="missions-panel-title">ACTIVE MISSIONS</div>
+        <div id="missions-side" class="missions-side">
+          <div class="missions-empty">No active missions</div>
+        </div>
+      </div>
+
     </div>
 
-    <!-- RIGHT: log -->
-    <div class="log-panel">
-      <div class="log-panel-title">BATTLE LOG</div>
-      <div class="log" id="game-log"></div>
+    <!-- BOTTOM ROW: hand, full layout width -->
+    <div class="bottom-row">
+      <div class="hand-area">
+        <div class="hand-label">YOUR HAND <span class="hand-hint">· E = end turn · Esc = cancel</span></div>
+        <div class="hand" id="p1-hand"></div>
+      </div>
     </div>
 
   </div>

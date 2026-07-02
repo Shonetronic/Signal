@@ -242,11 +242,14 @@ export function oppositeDir(dir) {
 
 // ── Objective helpers ────────────────────────────────────────────────────────
 
-// turn 1 → 0 (no bonus), turns 2-3 → 1, 4-5 → 2, 6-7 → 3, 8+ → 4.
+// state.turn is a half-turn counter (increments each time any player ends their turn).
+// Convert to full rounds: round 1 = half-turns 1-2, round 2 = half-turns 3-4, etc.
+// Round 1 → 0 (no bonus), rounds 2-3 → L1, 4-5 → L2, 6-7 → L3, 8+ → L4.
 export function objectiveLevel(turn) {
-  if (turn < 2) return 0;
-  if (turn <= 3) return 1;
-  if (turn <= 5) return 2;
-  if (turn <= 7) return 3;
+  const round = Math.ceil(turn / 2);
+  if (round < 2) return 0;
+  if (round <= 3) return 1;
+  if (round <= 5) return 2;
+  if (round <= 7) return 3;
   return 4;
 }

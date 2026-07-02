@@ -29,15 +29,15 @@
     <div id="join-form" style="display:none; flex-direction:column; align-items:center; gap:16px; margin-top:32px;">
       <input id="code-input" type="text" placeholder="XXXXXX" maxlength="6"
         style="font-size:28px; letter-spacing:8px; text-transform:uppercase; padding:14px 28px;
-               background:#0f1a30; border:2px solid #444; color:#eee; border-radius:6px;
-               text-align:center; width:220px;">
+               background:#0e0c09; border:1px solid #3a3020; color:#d4c8a8; border-radius:3px;
+               text-align:center; width:220px; font-family:'Arial Narrow',Arial,sans-serif;">
       <button class="btn btn-primary" id="btn-join">JOIN GAME</button>
     </div>
 
     <div id="create-panel" style="display:none; flex-direction:column; align-items:center; gap:16px; margin-top:32px;">
-      <div style="font-size:12px; color:#888; letter-spacing:2px;">SHARE THIS CODE WITH YOUR OPPONENT</div>
-      <div id="game-code-display" style="font-size:52px; font-weight:bold; letter-spacing:12px; color:#f5a623;"></div>
-      <div style="font-size:12px; color:#555;">When they join, click Enter Game to pick decks and map.</div>
+      <div style="font-size:11px; color:#3a3020; letter-spacing:3px; font-family:'Arial Narrow',Arial,sans-serif;">SHARE THIS CODE WITH YOUR OPPONENT</div>
+      <div id="game-code-display" style="font-size:52px; font-weight:bold; letter-spacing:12px; color:#c49a28; font-family:'Arial Narrow',Arial,sans-serif;"></div>
+      <div style="font-size:11px; color:#3a3020;">When they join, click Enter Game to pick decks and map.</div>
       <button class="btn btn-primary" id="btn-enter-game">Enter Game</button>
     </div>
   </div>
@@ -46,7 +46,7 @@
     import { generateGameCode } from './js/firebase.js';
 
     document.getElementById('btn-local').addEventListener('click', () => {
-      window.location.href = 'game';
+      window.location.href = 'game.html';
     });
 
     document.getElementById('btn-create').addEventListener('click', () => {
@@ -55,7 +55,7 @@
       document.getElementById('create-panel').style.display = 'flex';
       document.getElementById('main-buttons').style.display = 'none';
       document.getElementById('btn-enter-game').addEventListener('click', () => {
-        window.location.href = `game?game=${code}&role=p1`;
+        window.location.href = `game.html?game=${code}&role=p1`;
       });
     });
 
@@ -67,7 +67,7 @@
     document.getElementById('btn-join').addEventListener('click', () => {
       const code = document.getElementById('code-input').value.trim().toUpperCase();
       if (code.length < 4) return;
-      window.location.href = `game?game=${code}&role=p2`;
+      window.location.href = `game.html?game=${code}&role=p2`;
     });
 
     document.getElementById('code-input').addEventListener('keydown', e => {
