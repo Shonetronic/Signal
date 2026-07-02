@@ -821,20 +821,20 @@ body[data-theme="light"] .theme-toggle {
   flex-wrap: wrap;
 }
 .mulligan-card {
-  width: 300px !important;
-  height: 420px !important;
+  width: 210px !important;
+  height: 294px !important;
   cursor: pointer;
   position: relative;
   transition: border-color 0.15s, opacity 0.15s !important;
-  font-size: 14px !important;
+  font-size: 10px !important;
 }
-.mulligan-card .hc-header { font-size: 13px !important; padding: 6px 10px !important; }
-.mulligan-card .hc-cost   { font-size: 32px !important; padding: 4px 10px !important; }
-.mulligan-card .hc-type   { font-size: 14px !important; padding: 0 10px !important; }
-.mulligan-card .hc-dirs   { font-size: 28px !important; }
-.mulligan-card .hc-effect { font-size: 11px !important; padding: 8px 10px !important; line-height: 1.5 !important; }
-.mulligan-card .bc-keyword-row { padding: 5px 8px !important; }
-.mulligan-card .bc-kw-tag { font-size: 12px !important; }
+.mulligan-card .hc-header { font-size: 9px !important; padding: 4px 7px !important; }
+.mulligan-card .hc-cost   { font-size: 22px !important; padding: 3px 7px !important; }
+.mulligan-card .hc-type   { font-size: 10px !important; padding: 0 7px !important; }
+.mulligan-card .hc-dirs   { font-size: 20px !important; }
+.mulligan-card .hc-effect { font-size: 8px !important; padding: 6px 7px !important; line-height: 1.5 !important; }
+.mulligan-card .bc-keyword-row { padding: 4px 6px !important; }
+.mulligan-card .bc-kw-tag { font-size: 9px !important; }
 .mulligan-card.mulligan-discard {
   border-color: var(--p2) !important;
   opacity: 0.45;
@@ -907,45 +907,53 @@ body[data-theme="light"] .theme-toggle {
   font-family: 'Arial Narrow', Arial, sans-serif;
 }
 
-/* ── Light mode explicit overrides — fixes rgba hardcoded overlays ── */
-body[data-theme="light"] .hand-card {
-  background: #ffffff;
-  color: #111111;
-}
-body[data-theme="light"] .hc-header {
-  background: #e8eaf2;
-  color: #111111;
-  border-bottom-color: #d0d4e0;
-}
-body[data-theme="light"] .hc-cost { color: #886600; }
-body[data-theme="light"] .hc-type { color: #666677; }
-body[data-theme="light"] .hc-effect { color: #444455; }
-body[data-theme="light"] .hc-dirs { color: #111111; }
+/* ── Light mode explicit overrides (E theme from color_preview.html) ── */
 
-body[data-theme="light"] .board-card.p1 {
-  background: #dde8ff;
-  border-color: #2266cc;
-  color: #111111;
-}
-body[data-theme="light"] .board-card.p2 {
-  background: #ffd8d8;
-  border-color: #cc2233;
-  color: #111111;
-}
-body[data-theme="light"] .bc-name {
-  background: rgba(0,0,0,0.08);
-  color: #111111;
-}
-body[data-theme="light"] .bc-keyword-row {
-  background: rgba(0,0,0,0.05);
-}
-body[data-theme="light"] .bc-kw-tag {
-  background: #886600;
-  color: #ffffff;
-  border-color: transparent;
-}
-body[data-theme="light"] .bc-cls { color: #444455; opacity: 1; }
-body[data-theme="light"] .bc-state { color: #886600; }
-body[data-theme="light"] .armor-pip.full  { color: #886600; }
+/* Hand cards */
+body[data-theme="light"] .hand-card { background: #ffffff; color: #111122; }
+body[data-theme="light"] .hand-card:hover { border-color: #2266cc; box-shadow: 0 0 6px rgba(34,102,204,0.25); }
+body[data-theme="light"] .hc-header { background: #f2f4f8; color: #111122; border-bottom-color: #d0d4e0; }
+body[data-theme="light"] .hc-cost { color: #444455; }
+body[data-theme="light"] .hc-type { color: #9999aa; }
+body[data-theme="light"] .hc-effect { color: #444455; }
+body[data-theme="light"] .hc-dirs { color: #111122; }
+
+/* Board unit cards */
+body[data-theme="light"] .board-card.p1 { background: #e8f0ff; border-color: #2266cc; color: #111122; }
+body[data-theme="light"] .board-card.p2 { background: #ffe8e8; border-color: #cc2233; color: #111122; }
+body[data-theme="light"] .bc-name { background: rgba(255,255,255,0.6); color: #111122; }
+body[data-theme="light"] .bc-keyword-row { background: rgba(34,102,204,0.08); }
+body[data-theme="light"] .bc-kw-tag { background: #5566aa; color: #ffffff; border-color: transparent; }
+body[data-theme="light"] .bc-cls { color: #555566; opacity: 1; }
+body[data-theme="light"] .bc-state { color: #5566aa; }
+body[data-theme="light"] .bc-dirs { color: #111122; }
+body[data-theme="light"] .armor-pip.full  { color: #5566aa; }
 body[data-theme="light"] .armor-pip.spent { color: #ccccdd; }
-body[data-theme="light"] .bc-dirs { color: #111111; }
+
+/* Tile interactions — blue instead of gold */
+body[data-theme="light"] .tile:hover { border-color: #2266cc; }
+body[data-theme="light"] .tile.highlight { border-color: #2266cc; }
+body[data-theme="light"] .tile.selected-unit { border-color: #2266cc; }
+body[data-theme="light"] .tile.changed-tile { box-shadow: inset 0 0 0 2px rgba(34,102,204,0.4); }
+body[data-theme="light"] .stat-block.active-turn { border-color: #2266cc; box-shadow: 0 0 10px rgba(34,102,204,0.15); }
+
+/* Fuel and cost — neutral dark, not gold */
+body[data-theme="light"] .stat-fuel { color: #444455; }
+
+/* Mission panel — black text, blue accent */
+body[data-theme="light"] .md-name { color: #111122; }
+body[data-theme="light"] .md-counter { color: #2266cc; }
+body[data-theme="light"] .mission-badge { color: #444455; background: #e8eeff; border-color: #b0b8cc; }
+
+/* Log turn marker — blue instead of green */
+body[data-theme="light"] .log-entry.turn-marker { color: #2266cc; }
+body[data-theme="light"] .log-entry.win-msg { color: #2266cc; }
+
+/* Card preview panel */
+body[data-theme="light"] .cp-badge { color: #444455; }
+body[data-theme="light"] .cp-keyword { color: #5566aa; }
+
+/* Lobby — dark title, blue hover */
+body[data-theme="light"] .lobby-title { color: #111122; }
+body[data-theme="light"] .deck-option:hover { border-color: #2266cc; box-shadow: 0 4px 16px rgba(34,102,204,0.15); }
+body[data-theme="light"] .deck-ap { color: #444455; }
