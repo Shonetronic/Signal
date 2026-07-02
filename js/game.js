@@ -869,8 +869,10 @@ function getCommandTargets(commandId) {
     case 50: // Improvised Position — friendly unit with no base keyword
       return new Set(friendlies.filter(([, u]) => !CARD_BY_ID[u.cardId]?.keyword).map(([k]) => k));
 
-    case 74: // Dig In — friendly unit on a controlled objective
-      return new Set(friendlies.filter(([k]) => state.objectives[k]?.controller === active).map(([k]) => k));
+    case 74: // Dig In — friendly unit adjacent to a controlled objective
+      return new Set(friendlies.filter(([k]) =>
+        getAdjacentKeys(k).some(ak => state.objectives[ak]?.controller === active)
+      ).map(([k]) => k));
 
     default: return null; // unknown / not a targeted command
   }

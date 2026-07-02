@@ -67,7 +67,7 @@ export const CARDS = [
   { id:53, name:"Pincer Maneuver",     rarity:"Common", type:"command", cost:3, ap:1, effect:"Choose 2 friendly units on opposite sides of 1 enemy unit. Both attack it." },
   { id:54, name:"Last Stand",          rarity:"Common", type:"command", cost:2, ap:1, effect:"Remove Suppression from 1 friendly unit. It gains Guard until your next turn." },
   { id:73, name:"Overrun",             rarity:"Common", type:"command", cost:2, ap:2, effect:"This turn, every time you Suppress or Destroy an enemy unit, deal 1 additional HQ damage." },
-  { id:74, name:"Dig In",              rarity:"Common", type:"command", cost:1, ap:1, effect:"Choose 1 friendly unit on an objective tile you control. It gains Guard and Armor until your next turn." },
+  { id:74, name:"Dig In",              rarity:"Common", type:"command", cost:1, ap:1, effect:"Choose 1 friendly unit adjacent to an objective you control. It gains Guard and Armor until your next turn." },
   { id:75, name:"Hold Position",       rarity:"Common", type:"command", cost:2, ap:1, effect:"Up to 2 friendly units adjacent to an objective you control gain Armor until your next turn." },
   { id:76, name:"Industrial Surge",    rarity:"Common", type:"command", cost:1, ap:1, effect:"At the start of your next turn, gain 2 Fuel." },
   { id:78, name:"Combined Arms Doctrine", rarity:"Common", type:"command", cost:3, ap:3, effect:"Remove Suppression from all units on the board. For each unit cleared this way, your HQ gains 2 HP." },
