@@ -387,7 +387,13 @@ body {
 }
 .bc-dirs > div { display: flex; align-items: center; justify-content: center; }
 .bc-cls { font-size: 9px !important; font-weight: bold; opacity: 0.55; letter-spacing: 0.5px; }
-.bc-keyword { padding: 1px 3px; font-size: 9px; font-weight: bold; color: #c49a28; background: rgba(0,0,0,0.4); }
+.bc-keyword-row { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px 3px; background: rgba(0,0,0,0.3); }
+.bc-kw-tag {
+  font-size: 8px; font-weight: bold; color: #c49a28;
+  border: 1px solid rgba(196,154,40,0.6);
+  border-radius: 2px; padding: 0 3px; line-height: 1.5;
+  letter-spacing: 0.3px;
+}
 .bc-state { position: absolute; bottom: 1px; right: 2px; font-size: 7px; color: #c49a28; font-weight: bold; }
 .bc-armor { position: absolute; bottom: 1px; left: 2px; font-size: 10px; line-height: 1; }
 .armor-pip.full  { color: #c49a28; }
@@ -520,7 +526,7 @@ body {
   font-family: 'Arial Narrow', Arial, sans-serif;
 }
 .hc-dirs > div { display: flex; align-items: center; justify-content: center; }
-.hc-keyword { font-size: 9px; font-weight: bold; color: #c49a28; padding: 0 4px; }
+/* .hc-keyword replaced by .bc-kw-tag shared class */
 .hc-effect { padding: 3px 4px; font-size: 6px; color: #b0a080; line-height: 1.4; flex: 1; overflow: hidden; }
 
 /* ── Buttons ── */

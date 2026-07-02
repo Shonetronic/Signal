@@ -97,7 +97,8 @@ function buildBoardCard(unit) {
   const buffed = unit.tempSideBonus > 0 || (unit.tempKeywords?.length > 0) || (unit.grantedKeywords?.length > 0);
   el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}`;
 
-  const kws = getKeywords(unit).join(', ');
+  const kwList = getKeywords(unit);
+  const kwHtml = kwList.map(k => `<span class="bc-kw-tag">${k}</span>`).join('');
   const bonus = unit.tempSideBonus || 0;
   const maxArmor = maxArmorHits(unit);
   const remaining = maxArmor - unit.armorHits;
@@ -122,7 +123,7 @@ function buildBoardCard(unit) {
         <div>${card.s + bonus}</div>
         <div></div>
       </div>
-      ${kws ? `<div class="bc-keyword">${kws}</div>` : ''}
+      ${kwHtml ? `<div class="bc-keyword-row">${kwHtml}</div>` : ''}
       ${armorPips ? `<div class="bc-armor">${armorPips}</div>` : ''}
       ${unit.state === 'suppressed' ? '<div class="bc-state">SUP</div>' : ''}
       ${unit.state === 'destroyed' ? '<div class="bc-state">DEAD</div>' : ''}
@@ -162,7 +163,7 @@ export function renderHand(handCardIds, containerId, selectedCardId) {
           <div>${card.w}</div><div style="color:#444">·</div><div>${card.e}</div>
           <div></div><div>${card.s}</div><div></div>
         </div>
-        <div class="hc-keyword">${card.keyword || ''}</div>
+        ${card.keyword ? `<div class="bc-keyword-row"><span class="bc-kw-tag">${card.keyword}</span></div>` : ''}
       `;
     } else if (card.type === 'command' || card.type === 'mission') {
       div.innerHTML = `
