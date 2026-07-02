@@ -906,3 +906,46 @@ body[data-theme="light"] .theme-toggle {
   letter-spacing: 4px;
   font-family: 'Arial Narrow', Arial, sans-serif;
 }
+
+/* ── Light mode explicit overrides — fixes rgba hardcoded overlays ── */
+body[data-theme="light"] .hand-card {
+  background: #ffffff;
+  color: #111111;
+}
+body[data-theme="light"] .hc-header {
+  background: #e8eaf2;
+  color: #111111;
+  border-bottom-color: #d0d4e0;
+}
+body[data-theme="light"] .hc-cost { color: #886600; }
+body[data-theme="light"] .hc-type { color: #666677; }
+body[data-theme="light"] .hc-effect { color: #444455; }
+body[data-theme="light"] .hc-dirs { color: #111111; }
+
+body[data-theme="light"] .board-card.p1 {
+  background: #dde8ff;
+  border-color: #2266cc;
+  color: #111111;
+}
+body[data-theme="light"] .board-card.p2 {
+  background: #ffd8d8;
+  border-color: #cc2233;
+  color: #111111;
+}
+body[data-theme="light"] .bc-name {
+  background: rgba(0,0,0,0.08);
+  color: #111111;
+}
+body[data-theme="light"] .bc-keyword-row {
+  background: rgba(0,0,0,0.05);
+}
+body[data-theme="light"] .bc-kw-tag {
+  background: #886600;
+  color: #ffffff;
+  border-color: transparent;
+}
+body[data-theme="light"] .bc-cls { color: #444455; opacity: 1; }
+body[data-theme="light"] .bc-state { color: #886600; }
+body[data-theme="light"] .armor-pip.full  { color: #886600; }
+body[data-theme="light"] .armor-pip.spent { color: #ccccdd; }
+body[data-theme="light"] .bc-dirs { color: #111111; }
