@@ -107,6 +107,7 @@ function buildBoardCard(unit) {
       ).join('')
     : '';
 
+  const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR', Commander:'CMD', Naval:'NAV' };
   if (card && card.type === 'unit') {
     el.innerHTML = `
       <div class="bc-name">${card.name}</div>
@@ -115,7 +116,7 @@ function buildBoardCard(unit) {
         <div>${card.n + bonus}</div>
         <div></div>
         <div>${card.w + bonus}</div>
-        <div style="font-size:7px;color:#555">${card.cls[0]}</div>
+        <div class="bc-cls">${CLS_ABBR[card.cls] ?? card.cls}</div>
         <div>${card.e + bonus}</div>
         <div></div>
         <div>${card.s + bonus}</div>

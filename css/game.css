@@ -386,7 +386,8 @@ body {
   font-family: 'Arial Narrow', Arial, sans-serif;
 }
 .bc-dirs > div { display: flex; align-items: center; justify-content: center; }
-.bc-keyword { padding: 0 3px; font-size: 7px; color: #a09070; background: rgba(0,0,0,0.4); }
+.bc-cls { font-size: 9px !important; font-weight: bold; opacity: 0.55; letter-spacing: 0.5px; }
+.bc-keyword { padding: 1px 3px; font-size: 9px; font-weight: bold; color: #c49a28; background: rgba(0,0,0,0.4); }
 .bc-state { position: absolute; bottom: 1px; right: 2px; font-size: 7px; color: #c49a28; font-weight: bold; }
 .bc-armor { position: absolute; bottom: 1px; left: 2px; font-size: 10px; line-height: 1; }
 .armor-pip.full  { color: #c49a28; }
@@ -507,7 +508,7 @@ body {
   border-bottom: 1px solid #2a2218;
 }
 .hc-cost { font-size: 12px; font-weight: bold; color: #c49a28; padding: 2px 4px; font-family: 'Arial Narrow', Arial, sans-serif; }
-.hc-type { font-size: 6.5px; color: #8a7a60; padding: 0 4px; letter-spacing: 0.5px; }
+.hc-type { font-size: 9px; font-weight: bold; color: #8a7a60; padding: 0 4px; letter-spacing: 0.5px; }
 .hc-dirs {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -519,7 +520,7 @@ body {
   font-family: 'Arial Narrow', Arial, sans-serif;
 }
 .hc-dirs > div { display: flex; align-items: center; justify-content: center; }
-.hc-keyword { font-size: 6px; color: #a09070; padding: 0 4px; }
+.hc-keyword { font-size: 9px; font-weight: bold; color: #c49a28; padding: 0 4px; }
 .hc-effect { padding: 3px 4px; font-size: 6px; color: #b0a080; line-height: 1.4; flex: 1; overflow: hidden; }
 
 /* ── Buttons ── */
