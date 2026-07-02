@@ -1395,3 +1395,18 @@ if (isOnline && myRole === 'p2') {
     }
   });
 }
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+(function initTheme() {
+  const saved = localStorage.getItem('signal-theme');
+  if (saved === 'light') document.body.dataset.theme = 'light';
+  const btn = document.getElementById('theme-toggle');
+  if (!btn) return;
+  btn.textContent = document.body.dataset.theme === 'light' ? '☀ DARK' : '☾ LIGHT';
+  btn.addEventListener('click', () => {
+    const next = document.body.dataset.theme === 'light' ? 'dark' : 'light';
+    document.body.dataset.theme = next;
+    localStorage.setItem('signal-theme', next);
+    btn.textContent = next === 'light' ? '☀ DARK' : '☾ LIGHT';
+  });
+})();

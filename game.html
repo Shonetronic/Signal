@@ -7,6 +7,9 @@
 </head>
 <body>
 
+  <!-- Theme toggle — fixed top-right, visible on all screens -->
+  <button id="theme-toggle" class="theme-toggle">☾ LIGHT</button>
+
   <!-- ── LOBBY ── -->
   <div id="lobby">
     <div class="lobby-title">SIGNAL</div>
@@ -71,7 +74,7 @@
   <div id="mulligan-screen" style="display:none; flex-direction:column; align-items:center; gap:24px; padding:56px 16px;">
     <div class="lobby-title">SIGNAL</div>
     <div class="picker-label" id="mulligan-label">OPENING HAND</div>
-    <div style="font-size:12px; color:#5a4a30; text-align:center; letter-spacing:1px;">Click cards to mark for replacement — you may replace any number, once.</div>
+    <div class="mulligan-hint">Click cards to mark for replacement — you may replace any number, once.</div>
     <div class="mulligan-hand" id="mulligan-hand"></div>
     <div style="display:flex; gap:12px;">
       <button class="btn btn-primary" id="btn-mulligan-confirm">Confirm</button>
