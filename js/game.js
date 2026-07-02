@@ -653,7 +653,7 @@ function applyObjectiveEffects(s, player) {
     switch (obj.cardId) {
       case 26: { // Factory — fuel; L3+ buffs friendly Tanks; L4 HQ damage
         const fuel = lv >= 3 ? 2 : 1;
-        s = { ...s, [player]: gainFuel(s[player], fuel) };
+        s = { ...s, [player]: gainFuel(s[player], fuel, false) };
         log.push(`${nm} L${lv}: +${fuel} Fuel`);
         if (lv >= 3) {
           const bonus = lv === 4 ? 2 : 1;
@@ -686,7 +686,7 @@ function applyObjectiveEffects(s, player) {
       }
       case 28: { // Supply Depot — fuel + card draw at L3+, HQ at L4
         const fuel = lv === 1 ? 1 : lv === 2 ? 2 : lv === 3 ? 2 : 3;
-        s = { ...s, [player]: gainFuel(s[player], fuel) };
+        s = { ...s, [player]: gainFuel(s[player], fuel, false) };
         log.push(`${nm} L${lv}: +${fuel} Fuel`);
         if (lv >= 3) { s = { ...s, [player]: drawCards(s[player], 1) }; log.push(`${nm} L${lv}: Draw 1 card`); }
         if (lv === 4) {
@@ -1104,7 +1104,7 @@ function applyMissionReward(s, player, cardId, targetKey) {
       log.push(`${nm}: COMPLETE — 2 HQ damage to ${opp.toUpperCase()}`);
       break;
     case 25: { // Blitz Assault: draw 2 + 1 Fuel
-      s = { ...s, [player]: drawCards(gainFuel(s[player], 1), 2) };
+      s = { ...s, [player]: drawCards(gainFuel(s[player], 1, false), 2) };
       log.push(`${nm}: COMPLETE — Draw 2, +1 Fuel`);
       break;
     }

@@ -166,8 +166,9 @@ export function spendFuel(playerState, amount) {
   return { ...playerState, fuel: Math.max(0, playerState.fuel - amount) };
 }
 
-export function gainFuel(playerState, amount) {
-  return { ...playerState, fuel: Math.min(6, playerState.fuel + amount) };
+export function gainFuel(playerState, amount, cap = true) {
+  const newFuel = playerState.fuel + amount;
+  return { ...playerState, fuel: cap ? Math.min(6, newFuel) : newFuel };
 }
 
 // ── Board unit helpers ───────────────────────────────────────────────────────
