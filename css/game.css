@@ -653,12 +653,20 @@ body {
   flex-wrap: wrap;
 }
 .mulligan-card {
-  width: 110px !important;
-  height: 160px !important;
+  width: 150px !important;
+  height: 210px !important;
   cursor: pointer;
   position: relative;
   transition: border-color 0.15s, opacity 0.15s !important;
+  font-size: 11px !important;
 }
+.mulligan-card .hc-header { font-size: 10px !important; padding: 4px 6px !important; }
+.mulligan-card .hc-cost   { font-size: 18px !important; padding: 2px 6px !important; }
+.mulligan-card .hc-type   { font-size: 11px !important; padding: 0 6px !important; }
+.mulligan-card .hc-dirs   { font-size: 16px !important; }
+.mulligan-card .hc-effect { font-size: 9px !important; padding: 5px 6px !important; line-height: 1.5 !important; }
+.mulligan-card .bc-keyword-row { padding: 3px 5px !important; }
+.mulligan-card .bc-kw-tag { font-size: 10px !important; }
 .mulligan-card.mulligan-discard {
   border-color: #8a2418 !important;
   opacity: 0.45;

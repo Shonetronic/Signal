@@ -61,8 +61,8 @@ export function createInitialState(p1DeckIds, p2DeckIds, mapId = 'kursk') {
 
 function createPlayerState(deckCardIds) {
   const shuffled = [...deckCardIds].sort(() => Math.random() - 0.5);
-  const hand = shuffled.slice(0, 5);
-  const deck = shuffled.slice(5);
+  const hand = shuffled.slice(0, 4);
+  const deck = shuffled.slice(4);
   return {
     hq: 20,
     fuel: 0,

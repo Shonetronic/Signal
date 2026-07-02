@@ -155,17 +155,18 @@ function renderMulliganCards(hand) {
     if (!card) return;
     const div = document.createElement('div');
     div.className = `hand-card mulligan-card${mulliganSelected.has(i) ? ' mulligan-discard' : ''}`;
+    const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR', Commander:'CMD', Naval:'NAV' };
     if (card.type === 'unit') {
       div.innerHTML = `
         <div class="hc-header">${card.name}</div>
         <div class="hc-cost">${card.cost} ⛽</div>
-        <div class="hc-type">${card.cls}</div>
+        <div class="hc-type">${CLS_ABBR[card.cls] ?? card.cls}</div>
         <div class="hc-dirs">
           <div></div><div>${card.n}</div><div></div>
           <div>${card.w}</div><div style="color:#444">·</div><div>${card.e}</div>
           <div></div><div>${card.s}</div><div></div>
         </div>
-        <div class="hc-keyword">${card.keyword || ''}</div>`;
+        ${card.keyword ? `<div class="bc-keyword-row"><span class="bc-kw-tag">${card.keyword}</span></div>` : ''}`;
     } else {
       div.innerHTML = `
         <div class="hc-header">${card.name}</div>
@@ -207,6 +208,7 @@ function startGame(p1Ids, p2Ids, mapId) {
     document.getElementById('waiting-screen').style.display = 'none';
     showMulligan('YOUR OPENING HAND', s.p1.hand, indices => {
       s = applyMulligan(s, 'p1', indices);
+      s = { ...s, p1: drawCards(s.p1, 1) };
       finishStartGame(s, mapId);
     });
     return;
@@ -216,8 +218,10 @@ function startGame(p1Ids, p2Ids, mapId) {
     document.getElementById('lobby').style.display = 'none';
     showMulligan('P1 — OPENING HAND', s.p1.hand, indices1 => {
       s = applyMulligan(s, 'p1', indices1);
+      s = { ...s, p1: drawCards(s.p1, 1) };
       showMulligan('P2 — OPENING HAND', s.p2.hand, indices2 => {
         s = applyMulligan(s, 'p2', indices2);
+        s = { ...s, p2: drawCards(s.p2, 1) };
         finishStartGame(s, mapId);
       });
     });
@@ -1376,6 +1380,7 @@ if (isOnline && myRole === 'p2') {
         document.getElementById('waiting-screen').style.display = 'none';
         showMulligan('YOUR OPENING HAND', normalized.p2.hand, indices => {
           state = applyMulligan(normalized, 'p2', indices);
+          state = { ...state, p2: drawCards(state.p2, 1) };
           document.getElementById('game-area').style.display = 'flex';
           appendLog(state.log ?? []);
           redraw();
