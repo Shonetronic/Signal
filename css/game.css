@@ -149,10 +149,10 @@ body {
   position: fixed;
   top: 10px;
   right: 12px;
-  z-index: 1000;
-  background: var(--bg-alt);
-  border: 1px solid var(--gold-dim);
-  color: var(--gold);
+  z-index: 9999;
+  background: #f0c030;
+  border: none;
+  color: #111111;
   font-size: 11px;
   font-weight: bold;
   letter-spacing: 1px;
@@ -161,6 +161,10 @@ body {
   cursor: pointer;
   font-family: 'Arial Narrow', Arial, sans-serif;
   transition: opacity 0.15s;
+}
+body[data-theme="light"] .theme-toggle {
+  background: #2266cc;
+  color: #ffffff;
 }
 .theme-toggle:hover { opacity: 0.75; }
 
