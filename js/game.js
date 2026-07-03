@@ -141,6 +141,9 @@ let foCards = [];        // 3 cardIds drawn by FO
 let foPlayer = '';       // 'p1' or 'p2'
 let foAssignments = {};  // cardId → 'keep' | 'top' | 'bottom'
 
+// ── Double Attack tracking ─────────────────────────────────────────────────────
+let lastDATargetKey = null; // target of first Double Attack hit — always valid for 2nd hit
+
 // ── Mulligan ─────────────────────────────────────────────────────────────────
 
 let mulliganSelected = new Set();
@@ -419,6 +422,7 @@ function receiveRemoteState(remoteState) {
   pendingCommandId = null;
   preCommandState = null;
   attackedThisTurn = new Map();
+  lastDATargetKey = null;
   redraw();
 }
 
@@ -577,8 +581,15 @@ document.getElementById('board').addEventListener('click', e => {
   // TARGETING
   if (uiState === "targeting") {
     if (!pendingAttackerKey) return;
-    const isSecondDA = getKeywords(state.board[pendingAttackerKey]).includes('Double Attack') && (attackedThisTurn.get(pendingAttackerKey) ?? 0) >= 1;
-    const targets = getAttackableTargets(state, pendingAttackerKey, isSecondDA);
+    let targets = getAttackableTargets(state, pendingAttackerKey);
+    // Double Attack: first hit target is always valid for the second hit (even if Guard forces other targets)
+    if (lastDATargetKey && !targets.some(t => t.key === lastDATargetKey)) {
+      const prev = state.board[lastDATargetKey];
+      const active = state.initiative;
+      if (prev && prev.owner !== active && prev.state !== 'destroyed') {
+        targets = [...targets, { key: lastDATargetKey, dir: targets[0]?.dir ?? 'n' }];
+      }
+    }
     if (!targets.some(t => t.key === clickedKey)) return;
 
     const result = resolveSingleAttack(state, pendingAttackerKey, clickedKey);
@@ -604,6 +615,11 @@ document.getElementById('board').addEventListener('click', e => {
     attackedThisTurn.set(attackerKey, (attackedThisTurn.get(attackerKey) ?? 0) + 1);
     const attackCount = attackedThisTurn.get(attackerKey);
     const isDoubleAttack = getKeywords(attackerUnit).includes('Double Attack');
+
+    // Track first DA hit so second hit can always re-target it
+    if (isDoubleAttack && attackCount === 1) lastDATargetKey = clickedKey;
+    else if (!isDoubleAttack || attackCount >= 2) lastDATargetKey = null;
+
     const postAttackTargets = getAttackableTargets({ ...state, board: newBoard }, attackerKey, isDoubleAttack);
 
     // Kill tracking + mission check
