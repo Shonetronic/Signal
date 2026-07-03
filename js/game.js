@@ -1374,7 +1374,7 @@ function renderMissionsPanel(s) {
       <div class="md-label">CONDITION</div>
       <div class="md-req">${card.req || '—'}</div>
       <div class="md-label">REWARD</div>
-      <div class="md-reward">${card.effect || '—'}</div>
+      <div class="md-reward">${card.reward || card.effect || '—'}</div>
     </div>`;
   }).join('');
 }
