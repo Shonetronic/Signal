@@ -167,6 +167,24 @@ function renderMulliganCards(hand) {
           <div></div><div>${card.s}</div><div></div>
         </div>
         ${card.keyword ? `<div class="bc-keyword-row"><span class="bc-kw-tag">${card.keyword}</span></div>` : ''}`;
+    } else if (card.type === 'command') {
+      div.classList.add('hc-command');
+      div.innerHTML = `
+        <div class="hc-header">${card.name}</div>
+        <div class="hc-cost">${card.cost} ⛽</div>
+        <div class="hc-type hc-command-label">COMMAND</div>
+        <div class="hc-effect">${card.effect || ''}</div>`;
+    } else if (card.type === 'mission') {
+      div.classList.add('hc-mission');
+      div.innerHTML = `
+        <div class="hc-header">${card.name}</div>
+        <div class="hc-cost">${card.cost} ⛽</div>
+        <div class="hc-type hc-mission-label">MISSION</div>
+        <div class="hc-req">${card.req || ''}</div>
+        <div class="hc-reward-strip">
+          <div class="hc-reward-label">REWARD</div>
+          <div class="hc-reward-text">${card.reward || card.effect || ''}</div>
+        </div>`;
     } else {
       div.innerHTML = `
         <div class="hc-header">${card.name}</div>
@@ -1246,11 +1264,11 @@ function showCardPreview(cardId) {
       `<div class="cp-dir-row"><span class="cp-dl">E</span><span class="cp-dv">${card.e}</span></div>` +
       `<div class="cp-dir-row"><span class="cp-dl">S</span><span class="cp-dv">${card.s}</span></div>` +
       `<div class="cp-dir-row"><span class="cp-dl">W</span><span class="cp-dv">${card.w}</span></div>`;
-    document.getElementById('cp-keyword').textContent = card.keyword ? `◆ ${card.keyword}` : '';
+    document.getElementById('cp-keyword').innerHTML = card.keyword ? `<span class="cp-kw-tag">${card.keyword}</span>` : '';
     document.getElementById('cp-effect').textContent = '';
   } else {
     document.getElementById('cp-dirs').innerHTML = '';
-    document.getElementById('cp-keyword').textContent = '';
+    document.getElementById('cp-keyword').innerHTML = '';
     document.getElementById('cp-effect').textContent = card.effect || card.req || '';
   }
   document.getElementById('card-preview').style.display = 'flex';

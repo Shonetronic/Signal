@@ -33,41 +33,52 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
 
       if (changedKeys?.has(key)) tile.classList.add('changed-tile');
 
-      // Objective label + tooltip
+      // Objective tile — D design
       if (obj) {
         tile.classList.add('objective-tile');
         if (obj.controller === 'p1') tile.classList.add('obj-ctrl-p1');
         else if (obj.controller === 'p2') tile.classList.add('obj-ctrl-p2');
         const objCard = CARD_BY_ID[obj.cardId];
-
-        // Small corner label
         const ctrl = obj.controller;
-        const ctrlTag = ctrl ? ` [${ctrl.toUpperCase()}]` : '';
-        const lbl = document.createElement('div');
-        lbl.className = 'objective-label';
-        lbl.textContent = `${objCard?.name ?? '?'} L${obj.level}${ctrlTag}`;
-        tile.appendChild(lbl);
 
-        // Hover tooltip: all 4 levels with current one highlighted
+        // Header: OBJECTIVE badge + controller
+        const header = document.createElement('div');
+        header.className = 'obj-header';
+        header.innerHTML = `<span class="obj-type-badge">OBJECTIVE</span>${ctrl ? `<span class="obj-ctrl-badge ${ctrl}">${ctrl.toUpperCase()}</span>` : ''}`;
+        tile.appendChild(header);
+
         if (objCard) {
+          // Name (visible when no unit on tile)
+          const nameEl = document.createElement('div');
+          nameEl.className = 'obj-name-center';
+          nameEl.textContent = objCard.name;
+          tile.appendChild(nameEl);
+
+          // Level dots
+          const track = document.createElement('div');
+          track.className = 'obj-level-track';
+          for (let i = 1; i <= 4; i++) {
+            const dotClass = i < obj.level ? 'done' : i === obj.level ? 'active' : 'future';
+            const dot = document.createElement('div');
+            dot.className = `obj-lvdot ${dotClass}`;
+            dot.textContent = i;
+            track.appendChild(dot);
+          }
+          tile.appendChild(track);
+
+          // Hover tooltip
           const tooltip = document.createElement('div');
           tooltip.className = 'objective-tooltip';
-          // Position left or right based on column to stay on screen
           if (c >= 2) { tooltip.style.right = '100px'; tooltip.style.left = 'auto'; }
           else         { tooltip.style.left  = '100px'; tooltip.style.right = 'auto'; }
-
           const ctrlLabel = ctrl
             ? `<div class="obj-ctrl ${ctrl}">${ctrl.toUpperCase()} CONTROLS</div>`
             : `<div class="obj-ctrl neutral">NEUTRAL</div>`;
-
           const levels = [objCard.l1, objCard.l2, objCard.l3, objCard.l4];
           const levelHtml = levels.map((eff, i) => {
             const isCurrent = (i + 1) === obj.level;
-            return `<div class="obj-tt-level${isCurrent ? ' current' : ''}">
-              <span class="obj-tt-lnum">L${i+1}</span> ${eff ?? '—'}
-            </div>`;
+            return `<div class="obj-tt-level${isCurrent ? ' current' : ''}"><span class="obj-tt-lnum">L${i+1}</span> ${eff ?? '—'}</div>`;
           }).join('');
-
           tooltip.innerHTML = `<div class="obj-tt-name">${objCard.name}</div>${ctrlLabel}${levelHtml}`;
           tile.appendChild(tooltip);
         }
@@ -165,12 +176,25 @@ export function renderHand(handCardIds, containerId, selectedCardId) {
         </div>
         ${card.keyword ? `<div class="bc-keyword-row"><span class="bc-kw-tag">${card.keyword}</span></div>` : ''}
       `;
-    } else if (card.type === 'command' || card.type === 'mission') {
+    } else if (card.type === 'command') {
+      div.classList.add('hc-command');
       div.innerHTML = `
         <div class="hc-header">${card.name}</div>
         <div class="hc-cost">${card.cost} ⛽</div>
-        <div class="hc-type">${card.type}</div>
-        <div class="hc-effect">${card.effect || card.req || ''}</div>
+        <div class="hc-type hc-command-label">COMMAND</div>
+        <div class="hc-effect">${card.effect || ''}</div>
+      `;
+    } else if (card.type === 'mission') {
+      div.classList.add('hc-mission');
+      div.innerHTML = `
+        <div class="hc-header">${card.name}</div>
+        <div class="hc-cost">${card.cost} ⛽</div>
+        <div class="hc-type hc-mission-label">MISSION</div>
+        <div class="hc-req">${card.req || ''}</div>
+        <div class="hc-reward-strip">
+          <div class="hc-reward-label">REWARD</div>
+          <div class="hc-reward-text">${card.reward || card.effect || ''}</div>
+        </div>
       `;
     } else {
       // objective (shouldn't normally be in hand, but handle gracefully)

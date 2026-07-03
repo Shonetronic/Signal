@@ -239,7 +239,7 @@ body[data-theme="light"] .theme-toggle {
   letter-spacing: 1px;
   margin-bottom: 6px;
 }
-.stat-fuel { font-size: 12px; color: var(--gold); }
+.stat-fuel { font-size: 12px; color: var(--gold); font-weight: bold; }
 
 /* Buttons between stats */
 .side-controls {
@@ -463,18 +463,78 @@ body[data-theme="light"] .theme-toggle {
 .tile.objective-tile { background: var(--obj-bg); border-color: var(--obj-border); }
 .tile.obj-ctrl-p1 { background: var(--p1-obj-bg) !important; border-color: var(--p1-obj-border) !important; }
 .tile.obj-ctrl-p2 { background: var(--p2-obj-bg) !important; border-color: var(--p2-obj-border) !important; }
-.objective-label {
+/* Objective tile — D design */
+.obj-header {
   position: absolute;
-  top: 2px; left: 2px;
-  font-size: 7px;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px;
+  z-index: 10;
+  pointer-events: none;
+}
+.obj-type-badge {
+  font-size: 7.5px;
+  font-weight: bold;
   color: var(--obj-label);
-  background: rgba(0,0,0,0.6);
-  padding: 1px 3px;
-  border-radius: 2px;
+  letter-spacing: 1.5px;
+  font-family: 'Arial Narrow', Arial, sans-serif;
+}
+.obj-ctrl-badge {
+  font-size: 8px;
+  font-weight: bold;
+  font-family: 'Arial Narrow', Arial, sans-serif;
+}
+.obj-ctrl-badge.p1 { color: var(--p1); }
+.obj-ctrl-badge.p2 { color: var(--p2); }
+.obj-name-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -55%);
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--text);
+  text-align: center;
+  width: 100%;
+  padding: 0 8px;
+  line-height: 1.2;
+  font-family: 'Arial Narrow', Arial, sans-serif;
   z-index: 2;
   pointer-events: none;
+}
+.obj-level-track {
+  position: absolute;
+  bottom: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  z-index: 10;
+  pointer-events: none;
+}
+.obj-lvdot {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: bold;
   font-family: 'Arial Narrow', Arial, sans-serif;
-  letter-spacing: 0.5px;
+}
+.obj-lvdot.done   { background: transparent; color: var(--text-d); border-color: var(--text-d); }
+.obj-lvdot.active { background: var(--gold); color: var(--bg); border-color: var(--gold); }
+.obj-lvdot.future { background: transparent; color: var(--border); border-color: var(--border); }
+
+/* Shrink board card on objective tiles so header + dots stay visible */
+.objective-tile .board-card {
+  position: absolute;
+  inset: 20px 4px 28px 4px;
+  width: auto;
+  height: auto;
+  z-index: 5;
 }
 
 /* Objective hover tooltip */
@@ -611,16 +671,24 @@ body[data-theme="light"] .theme-toggle {
   line-height: 1;
 }
 .cp-keyword {
-  font-size: 11px;
-  color: var(--log-pos);
   padding-top: 8px;
   border-top: 1px solid var(--border);
   margin-bottom: 6px;
 }
+.cp-kw-tag {
+  display: inline-block;
+  font-size: 13px; font-weight: bold;
+  color: var(--gold);
+  border: 1px solid var(--gold-dim);
+  border-radius: 3px;
+  padding: 3px 10px;
+  letter-spacing: 0.5px;
+  font-family: 'Arial Narrow', Arial, sans-serif;
+}
 .cp-effect {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--text-b);
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 /* ── Hand ── */
@@ -771,6 +839,7 @@ body[data-theme="light"] .theme-toggle {
   color: var(--text-c);
   letter-spacing: 3px;
   margin-top: 8px;
+  margin-bottom: 16px;
   font-family: 'Arial Narrow', Arial, sans-serif;
 }
 .deck-grid {
@@ -832,7 +901,7 @@ body[data-theme="light"] .theme-toggle {
 .mulligan-card .hc-cost   { font-size: 22px !important; padding: 3px 7px !important; }
 .mulligan-card .hc-type   { font-size: 10px !important; padding: 0 7px !important; }
 .mulligan-card .hc-dirs   { font-size: 20px !important; }
-.mulligan-card .hc-effect { font-size: 8px !important; padding: 6px 7px !important; line-height: 1.5 !important; }
+.mulligan-card .hc-effect { font-size: 12px !important; padding: 6px 7px !important; line-height: 1.6 !important; }
 .mulligan-card .bc-keyword-row { padding: 4px 6px !important; }
 .mulligan-card .bc-kw-tag { font-size: 9px !important; }
 .mulligan-card.mulligan-discard {
@@ -938,11 +1007,15 @@ body[data-theme="light"] .tile.changed-tile { box-shadow: inset 0 0 0 2px rgba(3
 body[data-theme="light"] .stat-block.active-turn { border-color: #2266cc; box-shadow: 0 0 10px rgba(34,102,204,0.15); }
 
 /* Fuel and cost — neutral dark, not gold */
-body[data-theme="light"] .stat-fuel { color: #444455; }
+body[data-theme="light"] .stat-fuel { color: #2266cc; }
 
-/* Mission panel — black text, blue accent */
-body[data-theme="light"] .md-name { color: #111122; }
-body[data-theme="light"] .md-counter { color: #2266cc; }
+/* Mission panel — E theme */
+body[data-theme="light"] .missions-panel-title { color: #666880; }
+body[data-theme="light"] .mission-detail { background: #ffffff; border-color: #d0d4e0; }
+body[data-theme="light"] .missions-empty { color: #9999aa; border-color: #d0d4e0; }
+body[data-theme="light"] .md-name { color: #bb8800; }
+body[data-theme="light"] .md-turns { color: #9999aa; }
+body[data-theme="light"] .md-counter { color: #444455; }
 body[data-theme="light"] .mission-badge { color: #444455; background: #e8eeff; border-color: #b0b8cc; }
 
 /* Log turn marker — blue instead of green */
@@ -951,9 +1024,35 @@ body[data-theme="light"] .log-entry.win-msg { color: #2266cc; }
 
 /* Card preview panel */
 body[data-theme="light"] .cp-badge { color: #444455; }
-body[data-theme="light"] .cp-keyword { color: #5566aa; }
+body[data-theme="light"] .cp-kw-tag { background: #e8eeff; color: #5566aa; border-color: #b0b8cc; }
 
 /* Lobby — dark title, blue hover */
-body[data-theme="light"] .lobby-title { color: #111122; }
+body[data-theme="light"] .lobby-title { color: #2266cc; }
 body[data-theme="light"] .deck-option:hover { border-color: #2266cc; box-shadow: 0 4px 16px rgba(34,102,204,0.15); }
-body[data-theme="light"] .deck-ap { color: #444455; }
+body[data-theme="light"] .deck-ap { color: #2266cc; }
+
+/* ── Command hand cards ── */
+.hand-card.hc-command { border-color: #8888cc; background: #10101e; }
+.hc-type.hc-command-label { color: #8888cc; font-weight: bold; letter-spacing: 1px; }
+body[data-theme="light"] .hand-card.hc-command { border-color: #4455bb; background: #eeeeff; }
+body[data-theme="light"] .hc-type.hc-command-label { color: #4455bb; }
+body[data-theme="light"] .hand-card.hc-command .hc-effect { color: #333355; }
+
+/* ── Mission hand cards ── */
+.hand-card.hc-mission { border-color: #c49a28; background: #140e00; }
+.hc-type.hc-mission-label { color: #c49a28; font-weight: bold; letter-spacing: 1px; }
+.hc-req { flex: 1; font-size: 9px; color: var(--text-b); padding: 4px 5px; line-height: 1.5; overflow: hidden; }
+.hc-reward-strip { padding: 4px 5px; background: rgba(196,154,40,0.18); border-top: 1px solid rgba(196,154,40,0.4); flex-shrink: 0; }
+.hc-reward-label { font-size: 7px; font-weight: bold; color: #c49a28; letter-spacing: 1px; font-family: 'Arial Narrow', Arial, sans-serif; margin-bottom: 2px; }
+.hc-reward-text { font-size: 7px; color: #f0e0a0; line-height: 1.4; }
+body[data-theme="light"] .hand-card.hc-mission { border-color: #aa7700; background: #fffae8; }
+body[data-theme="light"] .hc-type.hc-mission-label { color: #aa7700; }
+body[data-theme="light"] .hc-req { color: #444455; }
+body[data-theme="light"] .hc-reward-strip { background: rgba(170,119,0,0.12); border-top-color: rgba(170,119,0,0.35); }
+body[data-theme="light"] .hc-reward-label { color: #aa7700; }
+body[data-theme="light"] .hc-reward-text { color: #7a5500; }
+
+/* mulligan sizing for req/reward sections */
+.mulligan-card .hc-req { font-size: 12px !important; line-height: 1.6 !important; }
+.mulligan-card .hc-reward-label { font-size: 9px !important; }
+.mulligan-card .hc-reward-text { font-size: 11px !important; line-height: 1.5 !important; }
