@@ -577,7 +577,8 @@ document.getElementById('board').addEventListener('click', e => {
   // TARGETING
   if (uiState === "targeting") {
     if (!pendingAttackerKey) return;
-    const targets = getAttackableTargets(state, pendingAttackerKey);
+    const isSecondDA = getKeywords(state.board[pendingAttackerKey]).includes('Double Attack') && (attackedThisTurn.get(pendingAttackerKey) ?? 0) >= 1;
+    const targets = getAttackableTargets(state, pendingAttackerKey, isSecondDA);
     if (!targets.some(t => t.key === clickedKey)) return;
 
     const result = resolveSingleAttack(state, pendingAttackerKey, clickedKey);
@@ -603,7 +604,7 @@ document.getElementById('board').addEventListener('click', e => {
     attackedThisTurn.set(attackerKey, (attackedThisTurn.get(attackerKey) ?? 0) + 1);
     const attackCount = attackedThisTurn.get(attackerKey);
     const isDoubleAttack = getKeywords(attackerUnit).includes('Double Attack');
-    const postAttackTargets = getAttackableTargets({ ...state, board: newBoard }, attackerKey);
+    const postAttackTargets = getAttackableTargets({ ...state, board: newBoard }, attackerKey, isDoubleAttack);
 
     // Kill tracking + mission check
     const wasDestroyed = result.boardMutations.some(m => m.newUnit === null);

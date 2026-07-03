@@ -50,9 +50,10 @@ function getBombardTargets(row, col) {
 // Filters out: friendly tiles, empty tiles, destroyed units.
 // Guard enforcement: if any adjacent enemy has Guard keyword AND is not Suppressed,
 //   only those Guard units are returned — attacker must hit them first.
+//   skipGuard bypasses this (used for Double Attack's second hit).
 //
 // Bombard units target any enemy in the same row or column and bypass Guard enforcement.
-export function getAttackableTargets(state, attackerKey) {
+export function getAttackableTargets(state, attackerKey, skipGuard = false) {
   const [row, col] = tileCoords(attackerKey);
   const attacker = state.board[attackerKey];
   if (!attacker) return [];
@@ -78,6 +79,8 @@ export function getAttackableTargets(state, attackerKey) {
   });
 
   if (candidates.length === 0) return [];
+
+  if (skipGuard) return candidates;
 
   // Guard enforcement: if any alive adjacent enemy has Guard, restrict to Guard-only.
   const guardUnits = candidates.filter(({ key }) => {
