@@ -28,8 +28,8 @@ const DECKS = {
   power:   { ids: [9, 65, 41, 67, 86, 42, 13, 6, 78, 73, 17, 18, 49, 22, 76, 51, 19, 55, 84, 23, 23, 25, 25, 56, 58] },
 };
 
-// Bridge (29) and Radar Station (30) excluded — effects not automated yet.
-const WORKING_OBJECTIVE_IDS = [26, 27, 28, 31, 32, 33];
+// Bridge (29), Radar Station (30), Fortification (33) excluded — effects not automated yet.
+const WORKING_OBJECTIVE_IDS = [26, 27, 28, 31, 32];
 
 function pickObjectives(_mapId) {
   const slots = ['2,0', '3,3'];
