@@ -1277,17 +1277,6 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   const { state: afterEndMissions, log: endMissionLog } = checkActiveMissions(state, currentPlayer, { endOfTurn: true });
   let s = afterEndMissions;
 
-  // Supply Runner ability: adjacent to controlled objective → +1 Fuel
-  const supplyLog = [];
-  for (const [bk, u] of Object.entries(s.board)) {
-    if (!u || u.owner !== currentPlayer || u.state === 'destroyed') continue;
-    if (CARD_BY_ID[u.cardId]?.id !== 5) continue;
-    if (getAdjacentKeys(bk).some(k => s.objectives[k]?.controller === currentPlayer)) {
-      s = { ...s, [currentPlayer]: gainFuel(s[currentPlayer], 1, false) };
-      supplyLog.push(`Supply Runner: controlled objective → +1 Fuel`);
-    }
-  }
-
   // Reset killsThisTurn for the player who just ended
   s = { ...s, [currentPlayer]: { ...s[currentPlayer], killsThisTurn: 0 } };
 
@@ -1299,6 +1288,18 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   newState = startOfTurn(newState);                      // gain fuel for new active player
   newState = updateObjectiveLevels(newState);            // escalate objective levels
   newState = checkObjectiveControl(newState);            // check majority-adjacent control
+
+  // Supply Runner ability: at start of turn, if adjacent to a controlled objective → +1 Fuel
+  const supplyLog = [];
+  for (const [bk, u] of Object.entries(newState.board)) {
+    if (!u || u.owner !== newActive || u.state === 'destroyed') continue;
+    if (CARD_BY_ID[u.cardId]?.id !== 5) continue;
+    if (getAdjacentKeys(bk).some(k => newState.objectives[k]?.controller === newActive)) {
+      newState = { ...newState, [newActive]: gainFuel(newState[newActive], 1, false) };
+      supplyLog.push(`Supply Runner: controlled objective → +1 Fuel`);
+    }
+  }
+
   const { state: afterEffects, log: effectLog, pendingArtyHits } = applyObjectiveEffects(newState, newActive);
   newState = afterEffects;
 
@@ -1309,7 +1310,7 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   pendingCommandId = null;
 
   const newRound = Math.ceil(newState.turn / 2);
-  const turnLog = [...endMissionLog, ...supplyLog, `--- Round ${newRound} — ${newState.initiative.toUpperCase()} ---`, ...effectLog];
+  const turnLog = [...endMissionLog, `--- Round ${newRound} — ${newState.initiative.toUpperCase()} ---`, ...supplyLog, ...effectLog];
   commitState(newState, turnLog);
   checkWin();
 
