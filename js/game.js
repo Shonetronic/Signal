@@ -352,12 +352,18 @@ function redraw() {
   renderHand(state[handRole].hand, 'p1-hand', selectedHandCardId);
   renderMissionsPanel(state);
 
+  const endTurnBtn = document.getElementById('btn-end-turn');
   if (isOnline) {
     const isMyTurn = state.initiative === myRole;
     const round = Math.ceil(state.turn / 2);
     document.getElementById('turn-display').textContent = isMyTurn
       ? `Round ${round} — YOUR TURN`
       : `Round ${round} — WAITING FOR OPPONENT`;
+    endTurnBtn.disabled = !isMyTurn;
+    endTurnBtn.textContent = isMyTurn ? 'End Turn' : 'Waiting...';
+  } else {
+    endTurnBtn.disabled = false;
+    endTurnBtn.textContent = `End ${state.initiative.toUpperCase()} Turn`;
   }
 }
 

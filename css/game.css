@@ -766,6 +766,7 @@ body[data-theme="light"] .theme-toggle {
   transition: opacity 0.1s, box-shadow 0.1s;
 }
 .btn:hover { opacity: 0.88; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
 .btn-primary {
   background: var(--btn-p-bg);
   color: var(--btn-p-text);
