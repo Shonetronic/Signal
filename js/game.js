@@ -28,11 +28,12 @@ const DECKS = {
   power:   { ids: [9, 65, 41, 67, 86, 42, 13, 6, 78, 73, 17, 18, 49, 22, 76, 51, 19, 55, 84, 23, 23, 25, 25, 56, 58] },
 };
 
-const OBJECTIVE_IDS = [26, 27, 28, 29, 30, 31, 32, 33];
+// Bridge (29) and Radar Station (30) excluded — effects not automated yet.
+const WORKING_OBJECTIVE_IDS = [26, 27, 28, 31, 32, 33];
 
-function pickObjectives(mapId) {
-  const slots = MAPS[mapId].objectiveSlots;
-  const shuffled = [...OBJECTIVE_IDS].sort(() => Math.random() - 0.5);
+function pickObjectives(_mapId) {
+  const slots = ['2,0', '3,3'];
+  const shuffled = [...WORKING_OBJECTIVE_IDS].sort(() => Math.random() - 0.5);
   const objectives = {};
   slots.forEach((slot, i) => {
     objectives[slot] = { cardId: shuffled[i], level: 1 };
