@@ -135,6 +135,11 @@ let preCommandState = null;        // state snapshot before command-targeting st
 let lastChangedKeys = new Set();   // tiles changed by opponent's last move (cleared on own action)
 let gameOver = false;
 
+// ── Forward Observer state ─────────────────────────────────────────────────────
+let foCards = [];        // 3 cardIds drawn by FO
+let foPlayer = '';       // 'p1' or 'p2'
+let foAssignments = {};  // cardId → 'keep' | 'top' | 'bottom'
+
 // ── Mulligan ─────────────────────────────────────────────────────────────────
 
 let mulliganSelected = new Set();
@@ -856,6 +861,26 @@ function playInstantCommand(cardId) {
       log.push(`${card.name}: ${count} unit(s) near controlled objectives gain Armor (until your next turn)`);
       break;
     }
+    case 52: { // Forward Observer — draw 3, keep 1, top 1, bottom 1
+      const drawn = s[active].deck.slice(0, 3);
+      if (drawn.length === 0) {
+        log.push(`${card.name}: deck is empty`);
+        commitState(s, log);
+        return true;
+      }
+      if (drawn.length < 3) {
+        // Fewer than 3 cards left — just draw them all into hand
+        s = { ...s, [active]: drawCards(s[active], drawn.length) };
+        log.push(`${card.name}: drew ${drawn.length} card(s) (deck nearly empty)`);
+        commitState(s, log);
+        return true;
+      }
+      // Full case: draw 3, show modal
+      s = { ...s, [active]: { ...s[active], deck: s[active].deck.slice(3) } };
+      commitState(s, log);
+      showFOModal(drawn, active);
+      return true;
+    }
     default:
       return false; // targeted or not yet implemented
   }
@@ -1415,6 +1440,88 @@ if (isOnline && myRole === 'p2') {
     }
   });
 }
+
+// ── Forward Observer modal ────────────────────────────────────────────────────
+
+function showFOModal(drawn, player) {
+  foCards = drawn;
+  foPlayer = player;
+  foAssignments = {};
+
+  const container = document.getElementById('fo-cards');
+  container.innerHTML = '';
+
+  drawn.forEach((cardId, i) => {
+    const card = CARD_BY_ID[cardId];
+    const slot = document.createElement('div');
+    slot.className = 'fo-slot';
+
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'hand-card mulligan-card';
+    if (card.type === 'unit') {
+      cardDiv.innerHTML = `<div class="hc-header">${card.name}</div><div class="hc-cost">${card.cost} ⛽</div><div class="hc-type">${card.cls}</div><div class="hc-dirs"><div></div><div>${card.n}</div><div></div><div>${card.w}</div><div style="color:#444">·</div><div>${card.e}</div><div></div><div>${card.s}</div><div></div></div>${card.keyword ? `<div class="bc-keyword-row"><span class="bc-kw-tag">${card.keyword}</span></div>` : ''}`;
+    } else if (card.type === 'command') {
+      cardDiv.classList.add('hc-command');
+      cardDiv.innerHTML = `<div class="hc-header">${card.name}</div><div class="hc-cost">${card.cost} ⛽</div><div class="hc-type hc-command-label">COMMAND</div><div class="hc-effect">${card.effect || ''}</div>`;
+    } else if (card.type === 'mission') {
+      cardDiv.classList.add('hc-mission');
+      cardDiv.innerHTML = `<div class="hc-header">${card.name}</div><div class="hc-cost">${card.cost} ⛽</div><div class="hc-type hc-mission-label">MISSION</div><div class="hc-req">${card.req || ''}</div><div class="hc-reward-strip"><div class="hc-reward-label">REWARD</div><div class="hc-reward-text">${card.reward || card.effect || ''}</div></div>`;
+    } else {
+      cardDiv.innerHTML = `<div class="hc-header">${card?.name ?? '?'}</div>`;
+    }
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'fo-btn-group';
+    [['keep','KEEP'],['top','TOP'],['bottom','BOT']].forEach(([pos, label]) => {
+      const btn = document.createElement('button');
+      btn.id = `fo-btn-${i}-${pos}`;
+      btn.className = `fo-pos-btn fo-${pos}`;
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        const wasHere = foAssignments[cardId] === pos;
+        foCards.forEach(id => { if (foAssignments[id] === pos) delete foAssignments[id]; });
+        if (!wasHere) foAssignments[cardId] = pos;
+        updateFOButtons();
+      });
+      btnGroup.appendChild(btn);
+    });
+
+    slot.appendChild(cardDiv);
+    slot.appendChild(btnGroup);
+    container.appendChild(slot);
+  });
+
+  document.getElementById('fo-modal').style.display = 'flex';
+  updateFOButtons();
+}
+
+function updateFOButtons() {
+  foCards.forEach((cardId, i) => {
+    const assigned = foAssignments[cardId];
+    ['keep','top','bottom'].forEach(pos => {
+      const btn = document.getElementById(`fo-btn-${i}-${pos}`);
+      if (btn) btn.classList.toggle('fo-active', assigned === pos);
+    });
+  });
+  document.getElementById('fo-confirm').disabled = !foCards.every(id => foAssignments[id]);
+}
+
+function confirmFO() {
+  document.getElementById('fo-modal').style.display = 'none';
+  const keepId   = foCards.find(id => foAssignments[id] === 'keep');
+  const topId    = foCards.find(id => foAssignments[id] === 'top');
+  const bottomId = foCards.find(id => foAssignments[id] === 'bottom');
+  const ps = state[foPlayer];
+  const s = { ...state, [foPlayer]: { ...ps, hand: [...ps.hand, keepId], deck: [topId, ...ps.deck, bottomId] } };
+  const keepName   = CARD_BY_ID[keepId]?.name   ?? '?';
+  const topName    = CARD_BY_ID[topId]?.name    ?? '?';
+  const bottomName = CARD_BY_ID[bottomId]?.name ?? '?';
+  commitState(s, [`Forward Observer: kept ${keepName} · ${topName} → top · ${bottomName} → bottom`]);
+  foCards = [];
+  foAssignments = {};
+}
+
+document.getElementById('fo-confirm').addEventListener('click', confirmFO);
 
 // ── Theme toggle ──────────────────────────────────────────────────────────────
 (function initTheme() {

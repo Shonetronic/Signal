@@ -1056,3 +1056,22 @@ body[data-theme="light"] .hc-reward-text { color: #7a5500; }
 .mulligan-card .hc-req { font-size: 12px !important; line-height: 1.6 !important; }
 .mulligan-card .hc-reward-label { font-size: 9px !important; }
 .mulligan-card .hc-reward-text { font-size: 11px !important; line-height: 1.5 !important; }
+
+/* ── Forward Observer modal ── */
+.fo-title { font-size: 22px; font-weight: bold; letter-spacing: 4px; color: var(--gold); font-family: 'Arial Narrow', Arial, sans-serif; }
+.fo-subtitle { font-size: 12px; color: var(--text-b); letter-spacing: 0.5px; margin-top: -8px; }
+.fo-cards { display: flex; gap: 20px; align-items: flex-start; }
+.fo-slot { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.fo-btn-group { display: flex; gap: 4px; }
+.fo-pos-btn {
+  font-size: 9px; font-weight: bold; letter-spacing: 1px;
+  padding: 5px 10px; border-radius: 2px; cursor: pointer;
+  font-family: 'Arial Narrow', Arial, sans-serif;
+  background: transparent; transition: background 0.1s, color 0.1s;
+}
+.fo-pos-btn.fo-keep   { border: 1px solid #5599ff; color: #5599ff; }
+.fo-pos-btn.fo-top    { border: 1px solid var(--gold); color: var(--gold); }
+.fo-pos-btn.fo-bottom { border: 1px solid var(--text-c); color: var(--text-c); }
+.fo-pos-btn.fo-active.fo-keep   { background: rgba(85,153,255,0.25); }
+.fo-pos-btn.fo-active.fo-top    { background: rgba(240,192,48,0.2); }
+.fo-pos-btn.fo-active.fo-bottom { background: rgba(128,128,128,0.2); }

@@ -89,6 +89,14 @@
     <div id="waiting-msg" style="font-size:13px; color:#555; text-align:center;">Connecting...</div>
   </div>
 
+  <!-- ── FORWARD OBSERVER MODAL ── -->
+  <div id="fo-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.88); z-index:600; flex-direction:column; align-items:center; justify-content:center; gap:20px;">
+    <div class="fo-title">FORWARD OBSERVER</div>
+    <div class="fo-subtitle">Assign each card a position — one Keep, one Top of Deck, one Bottom of Deck</div>
+    <div class="fo-cards" id="fo-cards"></div>
+    <button class="btn btn-primary" id="fo-confirm" disabled>Confirm</button>
+  </div>
+
   <!-- ── END GAME OVERLAY ── -->
   <div id="end-screen" style="display:none;">
     <div class="end-content">
