@@ -21,8 +21,10 @@ import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby }
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
-  aggro:   { ids: [61, 1, 34, 70, 71, 38, 46, 69, 59, 60, 3, 6, 7, 8, 12, 18, 49, 51, 19, 22, 76, 73, 25, 24, 81] },
-  control: { ids: [2, 11, 36, 62, 64, 72, 6, 39, 63, 68, 18, 54, 74, 75, 49, 19, 22, 52, 50, 16, 23, 57, 58, 81, 56] },
+  // Bombard + Double Attack: 8 Bombard units, 8 DA units, draw engine, Total Onslaught — 48 AP
+  aggro:   { ids: [5,5, 42,42, 40,40, 19,19, 22,22, 10,10, 59,59, 81,81, 4,4, 13,13, 61,61, 52,52, 8,8] },
+  // Armor Fortress counter: Heavy Armor/Armor/Guard wall, commands to buff, Fortify mission — 50 AP
+  control: { ids: [65,65, 6,6, 36,36, 11,11, 39,39, 63,63, 2,2, 75,75, 74,74, 49,49, 54,54, 16,16, 57,57] },
   power:   { ids: [9, 65, 41, 67, 86, 42, 13, 6, 78, 73, 17, 18, 49, 22, 76, 51, 19, 55, 84, 23, 23, 25, 25, 56, 58] },
 };
 

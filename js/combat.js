@@ -31,24 +31,17 @@ export function adjacentTiles(row, col) {
 
 // ── Bombard targeting ────────────────────────────────────────────────────────
 
-// Returns attack list for a Bombard unit: one tile 2 steps in the strongest direction.
-// Ties in side value: picks first in DIRS order (n, e, s, w).
-// Returns [] if the target tile is off-board.
-function getBombardTarget(card, row, col) {
-  // Find the direction with the highest base side value.
-  let strongest = DIRS[0];
-  for (const dir of DIRS) {
-    if (card[dir] > card[strongest]) strongest = dir;
+// Returns all tiles in the same row and column as the Bombard unit.
+// Bombard can attack any enemy in its row OR column (line attack, any distance).
+function getBombardTargets(row, col) {
+  const targets = [];
+  for (let r = 0; r < 4; r++) {
+    if (r !== row) targets.push({ key: tileKey(r, col), dir: r < row ? 'n' : 's' });
   }
-
-  const [dr, dc] = DIR_OFFSET[strongest];
-  const r = row + dr * 2;
-  const c = col + dc * 2;
-
-  if (r >= 0 && r < 4 && c >= 0 && c < 4) {
-    return [{ key: tileKey(r, c), dir: strongest }];
+  for (let c = 0; c < 4; c++) {
+    if (c !== col) targets.push({ key: tileKey(row, c), dir: c < col ? 'w' : 'e' });
   }
-  return [];
+  return targets;
 }
 
 // ── getAttackableTargets ──────────────────────────────────────────────────────
@@ -58,8 +51,7 @@ function getBombardTarget(card, row, col) {
 // Guard enforcement: if any adjacent enemy has Guard keyword AND is not Suppressed,
 //   only those Guard units are returned — attacker must hit them first.
 //
-// Bombard units use 2-step targeting (same as before) and bypass Guard enforcement
-// because the Guard rule applies to adjacent attackers, not ranged.
+// Bombard units target any enemy in the same row or column and bypass Guard enforcement.
 export function getAttackableTargets(state, attackerKey) {
   const [row, col] = tileCoords(attackerKey);
   const attacker = state.board[attackerKey];
@@ -71,9 +63,9 @@ export function getAttackableTargets(state, attackerKey) {
   const kws = getKeywords(attacker);
   const owner = attacker.owner;
 
-  // Bombard: single 2-step target, no Guard enforcement.
+  // Bombard: all enemies in same row or column, bypasses Guard enforcement.
   if (kws.includes("Bombard")) {
-    return getBombardTarget(card, row, col).filter(({ key }) => {
+    return getBombardTargets(row, col).filter(({ key }) => {
       const tile = state.board[key];
       return tile && tile.owner !== owner && tile.state !== "destroyed";
     });
@@ -131,14 +123,10 @@ export function resolveSingleAttack(state, attackerKey, targetKey) {
   const colDiff = dc - ac;
 
   let dir = null;
-  if (rowDiff === -1 && colDiff === 0) dir = "n";
-  else if (rowDiff === 1 && colDiff === 0) dir = "s";
-  else if (rowDiff === 0 && colDiff === 1) dir = "e";
-  else if (rowDiff === 0 && colDiff === -1) dir = "w";
-  else if (rowDiff === -2 && colDiff === 0) dir = "n"; // Bombard 2-step north
-  else if (rowDiff === 2 && colDiff === 0) dir = "s";  // Bombard 2-step south
-  else if (rowDiff === 0 && colDiff === 2) dir = "e";  // Bombard 2-step east
-  else if (rowDiff === 0 && colDiff === -2) dir = "w"; // Bombard 2-step west
+  if (colDiff === 0 && rowDiff < 0) dir = "n";
+  else if (colDiff === 0 && rowDiff > 0) dir = "s";
+  else if (rowDiff === 0 && colDiff > 0) dir = "e";
+  else if (rowDiff === 0 && colDiff < 0) dir = "w";
 
   if (!dir) return empty;
 
