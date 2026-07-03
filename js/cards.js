@@ -29,7 +29,7 @@ export const CARDS = [
   { id:39, name:"Sherman Tank",        cls:"Tank",      rarity:"Common", type:"unit", cost:3, ap:3,  keyword:"Armor",         n:7, e:6, s:4, w:1, ability:null },
   { id:40, name:"Flak Halftrack",      cls:"Tank",      rarity:"Common", type:"unit", cost:2, ap:2,  keyword:"Bombard",       n:6, e:5, s:2, w:1, ability:null },
   { id:41, name:"Tank Destroyer",      cls:"Tank",      rarity:"Common", type:"unit", cost:4, ap:4,  keyword:"Breakthrough",  n:9, e:3, s:9, w:3, ability:null },
-  { id:42, name:"Rocket Launcher",     cls:"Artillery", rarity:"Common", type:"unit", cost:3, ap:4,  keyword:"Bombard",       n:5, e:1, s:1, w:1, ability:null },
+  { id:42, name:"Rocket Launcher",     cls:"Artillery", rarity:"Common", type:"unit", cost:3, ap:4,  keyword:["Bombard","Double Attack"], n:5, e:1, s:1, w:1, ability:null },
   { id:43, name:"Anti-Aircraft Gun",   cls:"Artillery", rarity:"Common", type:"unit", cost:2, ap:2,  keyword:"Guard",         n:6, e:5, s:4, w:1, ability:null },
   { id:44, name:"Recon Plane",         cls:"Aircraft",  rarity:"Common", type:"unit", cost:2, ap:3,  keyword:"Airborne",      n:6, e:4, s:4, w:1, ability:null },
   { id:45, name:"Heavy Bomber",        cls:"Aircraft",  rarity:"Common", type:"unit", cost:4, ap:5,  keyword:"Bombard",       n:6, e:6, s:6, w:6, ability:null },

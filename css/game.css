@@ -1058,6 +1058,13 @@ body[data-theme="light"] .hc-reward-text { color: #7a5500; }
 .mulligan-card .hc-reward-label { font-size: 9px !important; }
 .mulligan-card .hc-reward-text { font-size: 11px !important; line-height: 1.5 !important; }
 
+/* ── Objective side bonus + fuel discount indicators ── */
+.bc-dir-buffed { color: var(--gold); font-weight: bold; }
+.hc-cost-discounted { color: #44cc66; font-weight: bold; }
+.hc-tank-discounted { box-shadow: 0 0 8px rgba(68,204,102,0.5); border-color: #44cc66 !important; }
+body[data-theme="light"] .hc-tank-discounted { box-shadow: 0 0 8px rgba(0,160,60,0.3); border-color: #00a03c !important; }
+body[data-theme="light"] .hc-cost-discounted { color: #007a2e; }
+
 /* ── Forward Observer modal ── */
 .fo-title { font-size: 22px; font-weight: bold; letter-spacing: 4px; color: var(--gold); font-family: 'Arial Narrow', Arial, sans-serif; }
 .fo-subtitle { font-size: 12px; color: var(--text-b); letter-spacing: 0.5px; margin-top: -8px; }

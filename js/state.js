@@ -90,11 +90,11 @@ export function startOfTurn(state) {
     .map(m => ({ ...m, turnsRemaining: m.turnsRemaining - 1 }))
     .filter(m => m.turnsRemaining > 0);
 
-  // Clear "until your next turn" keyword grants when your turn comes around again
+  // Clear per-turn grants and obj bonus for the active player's units before objective effects re-apply
   const newBoard = Object.fromEntries(
     Object.entries(state.board).map(([k, u]) =>
-      [k, u && u.owner === activePlayer && u.grantedKeywords?.length
-        ? { ...u, grantedKeywords: [] }
+      [k, u && u.owner === activePlayer
+        ? { ...u, grantedKeywords: [], objSideBonus: 0 }
         : u]
     )
   );
@@ -173,17 +173,20 @@ export function gainFuel(playerState, amount, cap = true) {
 
 // ── Board unit helpers ───────────────────────────────────────────────────────
 
-// Returns card's base side value + tempSideBonus.
+// Returns card's base side value + tempSideBonus + objSideBonus.
 export function getSideValue(boardUnit, dir) {
   const card = CARD_BY_ID[boardUnit.cardId];
   if (!card || card.type !== "unit") return 0;
-  return card[dir] + (boardUnit.tempSideBonus || 0);
+  return card[dir] + (boardUnit.tempSideBonus || 0) + (boardUnit.objSideBonus || 0);
 }
 
-// Returns card's base keyword (if any) + tempKeywords + grantedKeywords.
+// Returns card's base keyword(s) + tempKeywords + grantedKeywords.
+// card.keyword may be a string or array.
 export function getKeywords(boardUnit) {
   const card = CARD_BY_ID[boardUnit.cardId];
-  const base = card?.keyword ? [card.keyword] : [];
+  const base = card?.keyword
+    ? (Array.isArray(card.keyword) ? card.keyword : [card.keyword])
+    : [];
   return [...base, ...(boardUnit.tempKeywords || []), ...(boardUnit.grantedKeywords || [])];
 }
 

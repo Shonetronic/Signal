@@ -144,6 +144,9 @@ let foAssignments = {};  // cardId → 'keep' | 'top' | 'bottom'
 // ── Double Attack tracking ─────────────────────────────────────────────────────
 let lastDATargetKey = null; // target of first Double Attack hit — always valid for 2nd hit
 
+// ── Artillery Position targeting ───────────────────────────────────────────────
+let pendingArtyHitCount = 0; // hits remaining from Artillery Position L2/L4
+
 // ── Mulligan ─────────────────────────────────────────────────────────────────
 
 let mulliganSelected = new Set();
@@ -348,8 +351,18 @@ function redraw() {
     }
   }
 
+  if (uiState === 'arty-targeting') {
+    const active = state.initiative;
+    for (const [key, unit] of Object.entries(state.board)) {
+      if (unit && unit.owner !== active && unit.state !== 'destroyed') {
+        const el = document.querySelector(`[data-key="${key}"]`);
+        if (el) el.classList.add('targetable');
+      }
+    }
+  }
+
   const handRole = myRole ?? state.initiative;
-  renderHand(state[handRole].hand, 'p1-hand', selectedHandCardId);
+  renderHand(state[handRole].hand, 'p1-hand', selectedHandCardId, { tankDiscount: state[handRole].tempFuelDiscount ?? 0 });
   renderMissionsPanel(state);
 
   const endTurnBtn = document.getElementById('btn-end-turn');
@@ -430,6 +443,7 @@ function receiveRemoteState(remoteState) {
   attackedThisTurn = new Map();
   lastDATargetKey = null;
   redraw();
+  checkWin();
 }
 
 function showEndScreen(winner) {
@@ -487,12 +501,15 @@ document.getElementById('p1-hand').addEventListener('click', e => {
       } else {
         appendLog([`${card.name}: no valid targets`]);
       }
+    } else {
+      checkWin();
     }
     return;
   } else {
     const active = state.initiative;
     if (state[active].fuel < card.cost) { appendLog([`Not enough Fuel`]); redraw(); return; }
     playMissionCard(cardId);
+    checkWin();
   }
   redraw();
 });
@@ -505,6 +522,24 @@ document.getElementById('board').addEventListener('click', e => {
   const tile = e.target.closest('.tile');
   if (!tile) return;
   const clickedKey = tile.dataset.key;
+
+  // ARTILLERY POSITION TARGETING
+  if (uiState === 'arty-targeting') {
+    const unit = state.board[clickedKey];
+    const active = state.initiative;
+    if (!unit || unit.owner === active || unit.state === 'destroyed') return;
+    const { newUnit, hqDamage } = applyHit(unit);
+    const finalUnit = newUnit.state === 'destroyed' ? null : newUnit;
+    const newBoard = { ...state.board, [clickedKey]: finalUnit };
+    const defOwner = unit.owner;
+    const newS = { ...state, board: newBoard, [defOwner]: { ...state[defOwner], hq: state[defOwner].hq - hqDamage } };
+    const stateLabel = finalUnit === null ? 'Destroyed' : newUnit.state === 'suppressed' ? 'Suppressed' : 'armor absorbed';
+    pendingArtyHitCount--;
+    uiState = pendingArtyHitCount > 0 ? 'arty-targeting' : 'idle';
+    commitState(newS, [`Artillery Position: ${CARD_BY_ID[unit.cardId]?.name} → ${stateLabel}`]);
+    checkWin();
+    return;
+  }
 
   // PLACING
   if (uiState === "placing") {
@@ -690,10 +725,11 @@ document.getElementById('board').addEventListener('click', e => {
 
 // ── Objective effects ─────────────────────────────────────────────────────────
 // Called at the start of each player's turn after control is checked.
-// Returns { state, log }.
+// Returns { state, log, pendingArtyHits }.
 function applyObjectiveEffects(s, player) {
   const log = [];
   const opp = player === 'p1' ? 'p2' : 'p1';
+  let artyHits = 0;
 
   for (const [key, obj] of Object.entries(s.objectives)) {
     if (obj.controller !== player) continue;
@@ -704,10 +740,14 @@ function applyObjectiveEffects(s, player) {
     const nm = card.name;
 
     switch (obj.cardId) {
-      case 26: { // Factory — fuel; L3+ buffs friendly Tanks; L4 HQ damage
-        const fuel = lv >= 3 ? 2 : 1;
+      case 26: { // Factory — fuel; L2 tank discount; L3+ buffs friendly Tanks; L4 HQ damage
+        const fuel = lv >= 2 ? 2 : 1;
         s = { ...s, [player]: gainFuel(s[player], fuel, false) };
         log.push(`${nm} L${lv}: +${fuel} Fuel`);
+        if (lv === 2) {
+          s = { ...s, [player]: { ...s[player], tempFuelDiscount: (s[player].tempFuelDiscount ?? 0) + 1 } };
+          log.push(`${nm} L2: next Tank costs 1 less Fuel`);
+        }
         if (lv >= 3) {
           const bonus = lv === 4 ? 2 : 1;
           const newBoard = { ...s.board };
@@ -715,12 +755,12 @@ function applyObjectiveEffects(s, player) {
           for (const [bk, u] of Object.entries(newBoard)) {
             if (!u || u.owner !== player || u.state === 'destroyed') continue;
             if (CARD_BY_ID[u.cardId]?.cls !== 'Tank') continue;
-            newBoard[bk] = { ...u, tempSideBonus: (u.tempSideBonus || 0) + bonus };
+            newBoard[bk] = { ...u, objSideBonus: (u.objSideBonus || 0) + bonus };
             buffCount++;
           }
           if (buffCount > 0) {
             s = { ...s, board: newBoard };
-            log.push(`${nm} L${lv}: ${buffCount} Tank(s) +${bonus} all sides`);
+            log.push(`${nm} L${lv}: ${buffCount} Tank(s) +${bonus} all sides (persists)`);
           }
         }
         if (lv === 4) {
@@ -775,7 +815,7 @@ function applyObjectiveEffects(s, player) {
           s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - dmg } };
           log.push(`${nm} L${lv}: ${dmg} HQ damage to ${opp.toUpperCase()}`);
         }
-        if (lv === 2 || lv === 4) log.push(`${nm} L${lv}: Deal 1 hit to 1 enemy (not automated — resolve manually)`);
+        if (lv === 2 || lv === 4) { artyHits++; log.push(`${nm} L${lv}: click an enemy unit to deal 1 hit`); }
         break;
       }
       case 33: { // Fortification — adjacent friendly units gain Armor this turn
@@ -798,7 +838,7 @@ function applyObjectiveEffects(s, player) {
       default: log.push(`${nm} L${lv}: effect triggered (not automated)`);
     }
   }
-  return { state: s, log };
+  return { state: s, log, pendingArtyHits: artyHits };
 }
 
 // ── Instant commands ──────────────────────────────────────────────────────────
@@ -1237,6 +1277,17 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   const { state: afterEndMissions, log: endMissionLog } = checkActiveMissions(state, currentPlayer, { endOfTurn: true });
   let s = afterEndMissions;
 
+  // Supply Runner ability: adjacent to controlled objective → +1 Fuel
+  const supplyLog = [];
+  for (const [bk, u] of Object.entries(s.board)) {
+    if (!u || u.owner !== currentPlayer || u.state === 'destroyed') continue;
+    if (CARD_BY_ID[u.cardId]?.id !== 5) continue;
+    if (getAdjacentKeys(bk).some(k => s.objectives[k]?.controller === currentPlayer)) {
+      s = { ...s, [currentPlayer]: gainFuel(s[currentPlayer], 1, false) };
+      supplyLog.push(`Supply Runner: controlled objective → +1 Fuel`);
+    }
+  }
+
   // Reset killsThisTurn for the player who just ended
   s = { ...s, [currentPlayer]: { ...s[currentPlayer], killsThisTurn: 0 } };
 
@@ -1248,19 +1299,25 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   newState = startOfTurn(newState);                      // gain fuel for new active player
   newState = updateObjectiveLevels(newState);            // escalate objective levels
   newState = checkObjectiveControl(newState);            // check majority-adjacent control
-  const { state: afterEffects, log: effectLog } = applyObjectiveEffects(newState, newActive);
+  const { state: afterEffects, log: effectLog, pendingArtyHits } = applyObjectiveEffects(newState, newActive);
   newState = afterEffects;
 
   attackedThisTurn = new Map();
-  uiState = "idle";
+  lastDATargetKey = null;
   selectedHandCardId = null;
   pendingAttackerKey = null;
   pendingCommandId = null;
 
   const newRound = Math.ceil(newState.turn / 2);
-  const turnLog = [...endMissionLog, `--- Round ${newRound} — ${newState.initiative.toUpperCase()} ---`, ...effectLog];
+  const turnLog = [...endMissionLog, ...supplyLog, `--- Round ${newRound} — ${newState.initiative.toUpperCase()} ---`, ...effectLog];
   commitState(newState, turnLog);
   checkWin();
+
+  if (pendingArtyHits > 0 && !gameOver) {
+    pendingArtyHitCount = pendingArtyHits;
+    uiState = 'arty-targeting';
+    redraw();
+  }
 });
 
 // ── Cancel ────────────────────────────────────────────────────────────────────

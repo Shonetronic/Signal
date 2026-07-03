@@ -110,7 +110,8 @@ function buildBoardCard(unit) {
 
   const kwList = getKeywords(unit);
   const kwHtml = kwList.map(k => `<span class="bc-kw-tag">${k}</span>`).join('');
-  const bonus = unit.tempSideBonus || 0;
+  const bonus = (unit.tempSideBonus || 0) + (unit.objSideBonus || 0);
+  const objBonus = unit.objSideBonus || 0;
   const maxArmor = maxArmorHits(unit);
   const remaining = maxArmor - unit.armorHits;
   const armorPips = maxArmor > 0
@@ -120,18 +121,19 @@ function buildBoardCard(unit) {
     : '';
 
   const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR', Commander:'CMD', Naval:'NAV' };
+  const dc = objBonus > 0 ? ' class="bc-dir-buffed"' : '';
   if (card && card.type === 'unit') {
     el.innerHTML = `
       <div class="bc-name">${card.name}</div>
       <div class="bc-dirs">
         <div></div>
-        <div>${card.n + bonus}</div>
+        <div${dc}>${card.n + bonus}</div>
         <div></div>
-        <div>${card.w + bonus}</div>
+        <div${dc}>${card.w + bonus}</div>
         <div class="bc-cls">${CLS_ABBR[card.cls] ?? card.cls}</div>
-        <div>${card.e + bonus}</div>
+        <div${dc}>${card.e + bonus}</div>
         <div></div>
-        <div>${card.s + bonus}</div>
+        <div${dc}>${card.s + bonus}</div>
         <div></div>
       </div>
       ${kwHtml ? `<div class="bc-keyword-row">${kwHtml}</div>` : ''}
@@ -150,7 +152,7 @@ function buildBoardCard(unit) {
 
 // Render a player's hand into the element with the given id.
 // selectedCardId: cardId currently selected (or null)
-export function renderHand(handCardIds, containerId, selectedCardId) {
+export function renderHand(handCardIds, containerId, selectedCardId, extras = {}) {
   const el = document.getElementById(containerId);
   if (!el) return;
   el.innerHTML = '';
@@ -165,9 +167,15 @@ export function renderHand(handCardIds, containerId, selectedCardId) {
     div.dataset.cardId = cardId;
 
     if (card.type === 'unit') {
+      const tankDiscount = card.cls === 'Tank' ? Math.min(card.cost, extras.tankDiscount || 0) : 0;
+      const displayCost = card.cost - tankDiscount;
+      const costHtml = tankDiscount > 0
+        ? `<span class="hc-cost-discounted">${displayCost} ⛽</span>`
+        : `${displayCost} ⛽`;
+      if (tankDiscount > 0) div.classList.add('hc-tank-discounted');
       div.innerHTML = `
         <div class="hc-header">${card.name}</div>
-        <div class="hc-cost">${card.cost} ⛽</div>
+        <div class="hc-cost">${costHtml}</div>
         <div class="hc-type">${card.cls}</div>
         <div class="hc-dirs">
           <div></div><div>${card.n}</div><div></div>
