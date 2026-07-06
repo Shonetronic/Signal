@@ -1,6 +1,6 @@
-import { CARD_BY_ID } from './cards.js';
-import { getKeywords, maxArmorHits } from './state.js';
-import { getTerrain } from './maps.js';
+import { CARD_BY_ID } from './cards.js?v=1783339743';
+import { getKeywords, maxArmorHits } from './state.js?v=1783339743';
+import { getTerrain } from './maps.js?v=1783339743';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
@@ -9,12 +9,15 @@ const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city:
 // Render the 4x4 board from state into the #board element.
 // selectedTileKey: tile currently selected/highlighted (string or null)
 // validDropKeys: Set of tile keys where the selected hand card can be placed (or null)
-export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null) {
+export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null, flip = false) {
   const board = document.getElementById('board');
   board.innerHTML = '';
 
-  for (let r = 0; r < 4; r++) {
-    for (let c = 0; c < 4; c++) {
+  const rows = flip ? [3,2,1,0] : [0,1,2,3];
+  const cols = flip ? [3,2,1,0] : [0,1,2,3];
+
+  for (const r of rows) {
+    for (const c of cols) {
       const key = `${r},${c}`;
       const unit = state.board[key];
       const obj = state.objectives[key];
@@ -88,7 +91,8 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
       if (unit) {
         // Destroyed units are still shown (greyed out) so board state is clear
         tile.classList.add('has-unit');
-        tile.appendChild(buildBoardCard(unit));
+        const viewer = flip ? 'p2' : 'p1';
+        tile.appendChild(buildBoardCard(unit, viewer));
       } else if (validDropKeys?.has(key)) {
         tile.classList.add('valid-drop');
       }
@@ -102,11 +106,12 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
   }
 }
 
-function buildBoardCard(unit) {
+function buildBoardCard(unit, viewer = 'p1') {
   const card = CARD_BY_ID[unit.cardId];
   const el = document.createElement('div');
   const buffed = unit.tempSideBonus > 0 || (unit.tempKeywords?.length > 0) || (unit.grantedKeywords?.length > 0);
-  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}`;
+  const opponent = unit.owner !== viewer;
+  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${opponent ? ' opponent-card' : ''}`;
 
   const kwList = getKeywords(unit);
   const kwHtml = kwList.map(k => `<span class="bc-kw-tag">${k}</span>`).join('');
@@ -125,18 +130,22 @@ function buildBoardCard(unit) {
 
   const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR', Commander:'CMD', Naval:'NAV' };
   const dc = objBonus > 0 ? ' class="bc-dir-buffed"' : '';
+  const dn = opponent ? card.s + bonus : card.n + bonus;
+  const ds = opponent ? card.n + bonus : card.s + bonus;
+  const de = opponent ? card.w + bonus : card.e + bonus;
+  const dw = opponent ? card.e + bonus : card.w + bonus;
   if (card && card.type === 'unit') {
     el.innerHTML = `
       <div class="bc-name">${card.name}</div>
       <div class="bc-dirs">
         <div></div>
-        <div${dc}>${card.n + bonus}</div>
+        <div${dc}>${dn}</div>
         <div></div>
-        <div${dc}>${card.w + bonus}</div>
+        <div${dc}>${dw}</div>
         <div class="bc-cls">${CLS_ABBR[card.cls] ?? card.cls}</div>
-        <div${dc}>${card.e + bonus}</div>
+        <div${dc}>${de}</div>
         <div></div>
-        <div${dc}>${card.s + bonus}</div>
+        <div${dc}>${ds}</div>
         <div></div>
       </div>
       ${(kwHtml || abilityHtml) ? `<div class="bc-keyword-row">${kwHtml}${abilityHtml}</div>` : ''}

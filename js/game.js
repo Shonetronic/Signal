@@ -1,4 +1,4 @@
-import { CARD_BY_ID } from './cards.js';
+import { CARD_BY_ID } from './cards.js?v=1783339743';
 import {
   createInitialState,
   startOfTurn,
@@ -13,11 +13,11 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js';
+} from './state.js?v=1783339743';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783339743';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783339743';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783339743';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783339743';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -25,14 +25,17 @@ const DECKS = {
   aggro:   { ids: [5,5, 42,42, 40,40, 19,19, 22,22, 10,10, 59,59, 81,81, 4,4, 13,13, 61,61, 52,52, 8,8] },
   // Armor Fortress counter: Heavy Armor/Armor/Guard wall, commands to buff, Fortify mission — 50 AP
   control: { ids: [65,65, 6,6, 36,36, 11,11, 39,39, 63,63, 2,2, 75,75, 74,74, 49,49, 54,54, 16,16, 57,57] },
-  power:   { ids: [9, 65, 41, 67, 86, 42, 13, 6, 78, 73, 17, 18, 49, 22, 76, 51, 19, 55, 84, 23, 23, 25, 25, 56, 58] },
+  // Counter-aggro: Guard wall neutralizes DA, Armor soaks Bombard, full draw engine, Overrun finisher — 40 AP
+  counter: { ids: [2,2, 11,11, 36,36, 43,43, 6,6, 69,69, 5,5, 1,1, 34,34, 22,22, 19,19, 73,73, 51,51, 25,25, 81,81] },
 };
 
 // Bridge (29), Radar Station (30), Fortification (33) excluded — effects not automated yet.
 const WORKING_OBJECTIVE_IDS = [26, 27, 28, 31, 32];
 
 function pickObjectives(_mapId) {
-  const slots = ['2,0', '3,3'];
+  const leftRow = Math.random() < 0.5 ? 1 : 2;
+  const rightRow = leftRow === 1 ? 2 : 1;
+  const slots = [`${leftRow},0`, `${rightRow},3`];
   const shuffled = [...WORKING_OBJECTIVE_IDS].sort(() => Math.random() - 0.5);
   const objectives = {};
   slots.forEach((slot, i) => {
@@ -323,9 +326,9 @@ function redraw() {
   renderHQ(state);
 
   if (uiState === "placing") {
-    renderBoard(state, null, getValidTiles(), lastChangedKeys);
+    renderBoard(state, null, getValidTiles(), lastChangedKeys, myRole === 'p2' || (myRole === null && state.initiative === 'p2'));
   } else {
-    renderBoard(state, null, null, lastChangedKeys);
+    renderBoard(state, null, null, lastChangedKeys, myRole === 'p2' || (myRole === null && state.initiative === 'p2'));
   }
 
   if (uiState === "targeting" && pendingAttackerKey) {
@@ -1373,8 +1376,9 @@ function showCardPreview(cardId) {
       `<div class="cp-dir-row"><span class="cp-dl">E</span><span class="cp-dv">${card.e}</span></div>` +
       `<div class="cp-dir-row"><span class="cp-dl">S</span><span class="cp-dv">${card.s}</span></div>` +
       `<div class="cp-dir-row"><span class="cp-dl">W</span><span class="cp-dv">${card.w}</span></div>`;
-    document.getElementById('cp-keyword').innerHTML = card.keyword ? `<span class="cp-kw-tag">${card.keyword}</span>` : '';
-    document.getElementById('cp-effect').textContent = '';
+    const kws = card.keyword ? (Array.isArray(card.keyword) ? card.keyword : [card.keyword]) : [];
+    document.getElementById('cp-keyword').innerHTML = kws.map(k => `<span class="cp-kw-tag">${k}</span>`).join('');
+    document.getElementById('cp-effect').textContent = card.ability || '';
   } else {
     document.getElementById('cp-dirs').innerHTML = '';
     document.getElementById('cp-keyword').innerHTML = '';
@@ -1467,15 +1471,18 @@ document.getElementById('p1-hand').addEventListener('mouseover', e => {
 });
 document.getElementById('p1-hand').addEventListener('mouseleave', hideCardPreview);
 
-// Board hover → attack prediction when in targeting mode
+// Board hover → attack prediction in targeting mode, card preview otherwise
 document.getElementById('board').addEventListener('mouseover', e => {
-  if (uiState !== 'targeting' || !pendingAttackerKey) return;
   const tile = e.target.closest('.tile');
-  if (tile?.classList.contains('targetable')) showAttackPreview(pendingAttackerKey, tile.dataset.key);
+  if (!tile) return;
+  if (uiState === 'targeting' && pendingAttackerKey) {
+    if (tile.classList.contains('targetable')) showAttackPreview(pendingAttackerKey, tile.dataset.key);
+    return;
+  }
+  const unit = state?.board[tile.dataset.key];
+  if (unit && unit.state !== 'destroyed') showCardPreview(unit.cardId);
 });
-document.getElementById('board').addEventListener('mouseleave', () => {
-  if (uiState === 'targeting') hideCardPreview();
-});
+document.getElementById('board').addEventListener('mouseleave', hideCardPreview);
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 

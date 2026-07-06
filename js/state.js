@@ -36,7 +36,7 @@
 //   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
 // }
 
-import { CARD_BY_ID } from './cards.js';
+import { CARD_BY_ID } from './cards.js?v=1783339743';
 
 // ── State factory ────────────────────────────────────────────────────────────
 

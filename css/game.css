@@ -764,7 +764,7 @@ body[data-theme="light"] .theme-toggle {
   font-family: 'Arial Narrow', Arial, sans-serif;
 }
 .hc-dirs > div { display: flex; align-items: center; justify-content: center; }
-.hc-effect { padding: 3px 4px; font-size: 6px; color: var(--text-b); line-height: 1.4; flex: 1; overflow: hidden; }
+.hc-effect { padding: 3px 4px; font-size: 9px; color: var(--text-b); line-height: 1.4; flex: 1; overflow: hidden; }
 
 /* ── Buttons ── */
 .btn {
