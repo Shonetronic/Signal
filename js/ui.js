@@ -1,6 +1,6 @@
-import { CARD_BY_ID } from './cards.js?v=1783339743';
-import { getKeywords, maxArmorHits } from './state.js?v=1783339743';
-import { getTerrain } from './maps.js?v=1783339743';
+import { CARD_BY_ID } from './cards.js?v=1783341581';
+import { getKeywords, maxArmorHits } from './state.js?v=1783341581';
+import { getTerrain } from './maps.js?v=1783341581';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
@@ -130,10 +130,10 @@ function buildBoardCard(unit, viewer = 'p1') {
 
   const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR', Commander:'CMD', Naval:'NAV' };
   const dc = objBonus > 0 ? ' class="bc-dir-buffed"' : '';
-  const dn = opponent ? card.s + bonus : card.n + bonus;
-  const ds = opponent ? card.n + bonus : card.s + bonus;
-  const de = opponent ? card.w + bonus : card.e + bonus;
-  const dw = opponent ? card.e + bonus : card.w + bonus;
+  const dn = (opponent ? card.s : card.n) + bonus;
+  const ds = (opponent ? card.n : card.s) + bonus;
+  const de = (opponent ? card.w : card.e) + bonus;
+  const dw = (opponent ? card.e : card.w) + bonus;
   if (card && card.type === 'unit') {
     el.innerHTML = `
       <div class="bc-name">${card.name}</div>

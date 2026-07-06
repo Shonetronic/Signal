@@ -36,7 +36,7 @@
 //   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1783339743';
+import { CARD_BY_ID } from './cards.js?v=1783341581';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
@@ -177,7 +177,10 @@ export function gainFuel(playerState, amount, cap = true) {
 export function getSideValue(boardUnit, dir) {
   const card = CARD_BY_ID[boardUnit.cardId];
   if (!card || card.type !== "unit") return 0;
-  return card[dir] + (boardUnit.tempSideBonus || 0) + (boardUnit.objSideBonus || 0);
+  // P2's card faces opposite direction — N is their front facing P1's side (actual South)
+  const P2_FLIP = { n: 's', s: 'n', e: 'w', w: 'e' };
+  const d = boardUnit.owner === 'p2' ? P2_FLIP[dir] : dir;
+  return card[d] + (boardUnit.tempSideBonus || 0) + (boardUnit.objSideBonus || 0);
 }
 
 // Returns card's base keyword(s) + tempKeywords + grantedKeywords.
