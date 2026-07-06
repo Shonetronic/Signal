@@ -615,6 +615,19 @@ body[data-theme="light"] .theme-toggle {
 .bc-armor { position: absolute; top: 2px; right: 3px; display: flex; flex-direction: column; gap: 1px; font-size: 9px; line-height: 1; z-index: 2; }
 .armor-pip.full  { color: var(--gold); }
 .armor-pip.spent { color: var(--text-d); }
+.bc-ability-pip {
+  position: relative; font-size: 7.5px; font-weight: bold;
+  color: #88ccff; border: 1px solid rgba(100,180,255,0.35);
+  border-radius: 2px; padding: 0 3px; line-height: 1.5; cursor: help;
+}
+.bc-ability-tip {
+  display: none; position: absolute; bottom: calc(100% + 5px); left: 0;
+  width: 160px; background: #0d1128; border: 1px solid #4455aa;
+  border-radius: 4px; padding: 6px 8px; font-size: 9px; line-height: 1.5;
+  color: #c8d0f0; z-index: 200; pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.7); white-space: normal; font-weight: normal;
+}
+.bc-ability-pip:hover .bc-ability-tip { display: block; }
 
 /* ── Card preview (in preview-panel, far left column) ── */
 .card-preview {
@@ -739,7 +752,7 @@ body[data-theme="light"] .theme-toggle {
   border-bottom: 1px solid var(--border);
 }
 .hc-cost { font-size: 12px; font-weight: bold; color: var(--gold); padding: 2px 4px; font-family: 'Arial Narrow', Arial, sans-serif; }
-.hc-type { font-size: 9px; font-weight: bold; color: var(--text-c); padding: 0 4px; letter-spacing: 0.5px; }
+.hc-type { font-size: 9px; font-weight: bold; color: var(--text-c); padding: 0 4px; letter-spacing: 0.5px; text-transform: uppercase; }
 .hc-dirs {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -997,6 +1010,8 @@ body[data-theme="light"] .bc-kw-tag { background: #5566aa; color: #ffffff; borde
 body[data-theme="light"] .bc-cls { color: #555566; opacity: 1; }
 body[data-theme="light"] .bc-state { color: #5566aa; }
 body[data-theme="light"] .bc-dirs { color: #111122; }
+body[data-theme="light"] .bc-ability-pip { color: #2255cc; border-color: rgba(34,85,204,0.4); }
+body[data-theme="light"] .bc-ability-tip { background: #f8f9ff; border-color: #8899dd; color: #222244; }
 body[data-theme="light"] .armor-pip.full  { color: #5566aa; }
 body[data-theme="light"] .armor-pip.spent { color: #ccccdd; }
 

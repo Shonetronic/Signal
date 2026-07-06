@@ -10,7 +10,7 @@ export const CARDS = [
   { id:2,  name:"Riflemen",            cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1,  keyword:"Guard",         n:4, e:3, s:2, w:3, ability:null },
   { id:3,  name:"Fallschirmjäger",     cls:"Infantry",  rarity:"Common", type:"unit", cost:2, ap:2,  keyword:"Airborne",      n:5, e:5, s:2, w:2, ability:null },
   { id:4,  name:"Mortar Team",         cls:"Infantry",  rarity:"Common", type:"unit", cost:2, ap:2,  keyword:"Bombard",       n:5, e:2, s:4, w:2, ability:null },
-  { id:5,  name:"Supply Runner",       cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:2,  keyword:null,           n:3, e:3, s:3, w:3, ability:"Control objective at turn end → gain 1 Fuel." },
+  { id:5,  name:"Supply Runner",       cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:2,  keyword:null,           n:3, e:3, s:3, w:3, ability:"Start of your turn: if on an objective you control, gain 1 Fuel." },
   { id:6,  name:"Halftrack",           cls:"Tank",      rarity:"Common", type:"unit", cost:2, ap:2,  keyword:"Armor",         n:5, e:4, s:1, w:4, ability:null },
   { id:7,  name:"Blitz Tank",          cls:"Tank",      rarity:"Common", type:"unit", cost:3, ap:4,  keyword:"Breakthrough",  n:5, e:5, s:5, w:5, ability:null },
   { id:8,  name:"Tank Hunter",         cls:"Tank",      rarity:"Common", type:"unit", cost:3, ap:3,  keyword:"Double Attack", n:6, e:6, s:3, w:2, ability:null },
