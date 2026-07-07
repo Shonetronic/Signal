@@ -41,7 +41,7 @@
 //   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1783426864';
+import { CARD_BY_ID } from './cards.js?v=1783427428';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
@@ -83,8 +83,8 @@ function createPlayerState(deckCardIds) {
 
 // ── Turn transitions ─────────────────────────────────────────────────────────
 
-// Active player gains 3 fuel (+pendingFuelGain, capped at 6).
-// Resets pendingFuelGain to 0.
+// Active player gains 3 fuel, capped at 6, then pendingFuelGain (Industrial Surge) on top of that,
+// uncapped — may push Fuel past 6 for this turn only. Resets pendingFuelGain to 0.
 // Decrements mission turnsRemaining, removes expired missions.
 // Clears grantedKeywords from all units owned by the active player.
 export function startOfTurn(state) {
