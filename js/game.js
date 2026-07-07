@@ -1,4 +1,4 @@
-import { CARD_BY_ID } from './cards.js?v=1783420939';
+import { CARD_BY_ID } from './cards.js?v=1783424923';
 import {
   createInitialState,
   startOfTurn,
@@ -13,11 +13,11 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783420939';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783420939';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783420939';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783420939';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783420939';
+} from './state.js?v=1783424923';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783424923';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783424923';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783424923';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783424923';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -504,8 +504,13 @@ document.getElementById('p1-hand').addEventListener('click', e => {
 
   if (card.type === 'unit') {
     const active = state.initiative;
-    if (state[active].fuel < card.cost) {
-      appendLog([`Not enough Fuel for ${card.name} (need ${card.cost}, have ${state[active].fuel})`]);
+    // Same discount formula as the placement handler below — selecting the card must use the
+    // same effective cost the hand display shows, or a discounted-but-affordable Tank gets
+    // rejected here quoting the full undiscounted price.
+    const discount = card.cls === 'Tank' ? Math.min(card.cost, state[active].tempFuelDiscount ?? 0) : 0;
+    const effectiveCost = card.cost - discount;
+    if (state[active].fuel < effectiveCost) {
+      appendLog([`Not enough Fuel for ${card.name} (need ${effectiveCost}, have ${state[active].fuel})`]);
       redraw();
       return;
     }
