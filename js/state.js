@@ -41,7 +41,7 @@
 //   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1783424923';
+import { CARD_BY_ID } from './cards.js?v=1783426864';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
@@ -90,7 +90,8 @@ function createPlayerState(deckCardIds) {
 export function startOfTurn(state) {
   const activePlayer = state.initiative;
   let ps = { ...state[activePlayer] };
-  ps = gainFuel(ps, 3 + ps.pendingFuelGain);
+  ps = gainFuel(ps, 3); // base per-turn gain, capped at 6 as normal
+  ps = gainFuel(ps, ps.pendingFuelGain, false); // Industrial Surge — may exceed the storage cap this turn
   ps.pendingFuelGain = 0;
   ps.missions = ps.missions
     .map(m => ({ ...m, turnsRemaining: m.turnsRemaining - 1 }))

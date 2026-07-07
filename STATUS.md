@@ -76,7 +76,7 @@ Legend: ✅ done | ⚠️ partial | ❌ missing
 | Last Stand | 54 | ✅ | Targeted — un-suppress + give Guard |
 | Dig In | 74 | ✅ | Targeted — Guard + Armor to unit on controlled objective |
 | Hold Position | 75 | ✅ | Instant — all friendly units adjacent to controlled objectives gain Armor |
-| Industrial Surge | 76 | ✅ | Instant — +2 Fuel at start of next turn |
+| Industrial Surge | 76 | ✅ | Instant — +2 Fuel at start of next turn, may exceed the 6 Fuel cap that turn |
 | Overrun | 73 | ✅ | Instant — each Suppress/Destroy this turn deals +1 HQ damage |
 | Combined Arms Doctrine | 78 | ✅ | Instant — clear all Suppression; +2 HQ per unit cleared |
 | Entrench | 80 | ✅ | Instant — all friendly Infantry +2 sides this turn |

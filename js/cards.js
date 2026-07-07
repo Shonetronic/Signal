@@ -69,7 +69,7 @@ export const CARDS = [
   { id:73, name:"Overrun",             rarity:"Common", type:"command", cost:2, ap:2, effect:"This turn, every time you Suppress or Destroy an enemy unit, deal 1 additional HQ damage." },
   { id:74, name:"Dig In",              rarity:"Common", type:"command", cost:1, ap:1, effect:"Choose 1 friendly unit adjacent to an objective you control. It gains Guard and Armor until your next turn." },
   { id:75, name:"Hold Position",       rarity:"Common", type:"command", cost:2, ap:1, effect:"Up to 2 friendly units adjacent to an objective you control gain Armor until your next turn." },
-  { id:76, name:"Industrial Surge",    rarity:"Common", type:"command", cost:1, ap:1, effect:"At the start of your next turn, gain 2 Fuel." },
+  { id:76, name:"Industrial Surge",    rarity:"Common", type:"command", cost:1, ap:1, effect:"At the start of your next turn, gain 2 Fuel. This gain may exceed your Fuel storage cap." },
   { id:78, name:"Combined Arms Doctrine", rarity:"Common", type:"command", cost:3, ap:3, effect:"Remove Suppression from all units on the board. For each unit cleared this way, your HQ gains 2 HP." },
   { id:79, name:"Suppressing Fire",    rarity:"Common", type:"command", cost:4, ap:4, effect:"Deal 1 hit to a single enemy unit for each friendly Infantry you control." },
   { id:80, name:"Entrench",            rarity:"Common", type:"command", cost:2, ap:2, effect:"Friendly Infantry you control gain +2 to all sides until your next turn." },
