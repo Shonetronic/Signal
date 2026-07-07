@@ -14,7 +14,7 @@
 // }
 //
 // PlayerState: {
-//   hq: number,                 — starts 20
+//   hq: number,                 — starts 25
 //   fuel: number,               — max 6
 //   pendingFuelGain: number,    — delayed fuel (Industrial Surge), added at next startOfTurn
 //   hand: number[],             — cardIds in hand
@@ -33,10 +33,12 @@
 //   tempKeywords: string[],     — keywords added THIS TURN only (objective buffs, Entrench); cleared by endTurn
 //   grantedKeywords: string[],  — keywords from commands lasting UNTIL OWNER'S NEXT TURN; cleared by startOfTurn
 //   tempSideBonus: number,      — +N to all sides this turn
+//   grantedSideBonus: number,   — +N to all sides from Rally Cry; lasts sideBonusTurns owner turn-starts
+//   sideBonusTurns: number,     — turn-starts remaining before grantedSideBonus clears (Rally Cry = 2)
 //   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1783341581';
+import { CARD_BY_ID } from './cards.js?v=1783419937';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
@@ -64,7 +66,7 @@ function createPlayerState(deckCardIds) {
   const hand = shuffled.slice(0, 4);
   const deck = shuffled.slice(4);
   return {
-    hq: 20,
+    hq: 25,
     fuel: 0,
     pendingFuelGain: 0,
     hand,
@@ -90,13 +92,20 @@ export function startOfTurn(state) {
     .map(m => ({ ...m, turnsRemaining: m.turnsRemaining - 1 }))
     .filter(m => m.turnsRemaining > 0);
 
-  // Clear per-turn grants and obj bonus for the active player's units before objective effects re-apply
+  // Clear per-turn grants and obj bonus for the active player's units before objective effects re-apply.
+  // grantedSideBonus (Rally Cry) uses its own counter so it can outlast a single turn (see sideBonusTurns).
   const newBoard = Object.fromEntries(
-    Object.entries(state.board).map(([k, u]) =>
-      [k, u && u.owner === activePlayer
-        ? { ...u, grantedKeywords: [], objSideBonus: 0 }
-        : u]
-    )
+    Object.entries(state.board).map(([k, u]) => {
+      if (!u || u.owner !== activePlayer) return [k, u];
+      const turnsLeft = (u.sideBonusTurns ?? 0) - 1;
+      return [k, {
+        ...u,
+        grantedKeywords: [],
+        objSideBonus: 0,
+        grantedSideBonus: turnsLeft > 0 ? u.grantedSideBonus : 0,
+        sideBonusTurns: turnsLeft > 0 ? turnsLeft : 0,
+      }];
+    })
   );
 
   return { ...state, [activePlayer]: ps, board: newBoard };
@@ -180,7 +189,7 @@ export function getSideValue(boardUnit, dir) {
   // P2's card faces opposite direction — N is their front facing P1's side (actual South)
   const P2_FLIP = { n: 's', s: 'n', e: 'w', w: 'e' };
   const d = boardUnit.owner === 'p2' ? P2_FLIP[dir] : dir;
-  return card[d] + (boardUnit.tempSideBonus || 0) + (boardUnit.objSideBonus || 0);
+  return card[d] + (boardUnit.tempSideBonus || 0) + (boardUnit.grantedSideBonus || 0) + (boardUnit.objSideBonus || 0);
 }
 
 // Returns card's base keyword(s) + tempKeywords + grantedKeywords.

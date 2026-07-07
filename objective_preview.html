@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SIGNAL — Objective Card Designs</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #1a1a1a; padding: 32px; display: flex; flex-direction: column; gap: 64px; }
+h2 { font-family: 'Arial Narrow', Arial; letter-spacing: 3px; font-size: 13px; color: #fff; margin-bottom: 4px; }
+.desc { font-size: 11px; color: #888; font-family: 'Arial Narrow', Arial; letter-spacing: 1px; margin-bottom: 20px; }
+.row { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+.col { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.lbl { font-size: 8px; color: #555; letter-spacing: 2px; font-family: 'Arial Narrow', Arial; }
+.bg-dark  { background: #111; padding: 14px; border-radius: 6px; display: flex; gap: 10px; }
+.bg-light { background: #f2f4f8; padding: 14px; border-radius: 6px; display: flex; gap: 10px; }
+
+/* Card shell */
+.ocard {
+  width: 108px; height: 160px;
+  border-radius: 3px; border: 2px solid;
+  display: flex; flex-direction: column; overflow: hidden;
+  font-family: 'Arial Narrow', Arial;
+  flex-shrink: 0;
+}
+
+/* ─── OPTION A: Level List ─── */
+/* Dark */
+.a.dark { border-color: #3a9a60; background: #071a10; color: #fff; }
+.a.dark .hdr  { background: rgba(0,0,0,0.4); color: #fff; font-size: 7.5px; font-weight: bold; padding: 3px 5px; white-space: nowrap; overflow: hidden; }
+.a.dark .badge-row { display: flex; align-items: baseline; gap: 4px; padding: 2px 5px; border-bottom: 1px solid rgba(58,154,96,0.3); }
+.a.dark .badge-cost { font-size: 11px; font-weight: bold; color: #3a9a60; }
+.a.dark .badge-type { font-size: 7.5px; font-weight: bold; color: #3a9a60; letter-spacing: 1px; }
+.a.dark .cat { font-size: 6.5px; color: #4a7a58; padding: 2px 5px; letter-spacing: 0.5px; text-transform: uppercase; }
+.a.dark .levels { display: flex; flex-direction: column; flex: 1; padding: 3px 5px; gap: 3px; overflow: hidden; }
+.a.dark .lvl-row { display: flex; gap: 4px; align-items: flex-start; }
+.a.dark .lvl-num { font-size: 6.5px; font-weight: bold; color: #3a9a60; min-width: 12px; line-height: 1.5; }
+.a.dark .lvl-txt { font-size: 6.5px; color: #aaccbb; line-height: 1.5; flex: 1; }
+.a.dark .lvl-row.active .lvl-num { color: #5aee90; }
+.a.dark .lvl-row.active .lvl-txt { color: #e0fff0; }
+.a.dark .lvl-row.dim .lvl-txt { color: #3a5a48; }
+
+/* Light */
+.a.light { border-color: #1a8040; background: #eefaf3; color: #111; }
+.a.light .hdr  { background: rgba(0,0,0,0.07); color: #111; font-size: 7.5px; font-weight: bold; padding: 3px 5px; white-space: nowrap; overflow: hidden; }
+.a.light .badge-row { display: flex; align-items: baseline; gap: 4px; padding: 2px 5px; border-bottom: 1px solid rgba(26,128,64,0.2); }
+.a.light .badge-cost { font-size: 11px; font-weight: bold; color: #1a8040; }
+.a.light .badge-type { font-size: 7.5px; font-weight: bold; color: #1a8040; letter-spacing: 1px; }
+.a.light .cat { font-size: 6.5px; color: #5a9a6a; padding: 2px 5px; letter-spacing: 0.5px; text-transform: uppercase; }
+.a.light .levels { display: flex; flex-direction: column; flex: 1; padding: 3px 5px; gap: 3px; overflow: hidden; }
+.a.light .lvl-row { display: flex; gap: 4px; align-items: flex-start; }
+.a.light .lvl-num { font-size: 6.5px; font-weight: bold; color: #1a8040; min-width: 12px; line-height: 1.5; }
+.a.light .lvl-txt { font-size: 6.5px; color: #2a5a38; line-height: 1.5; flex: 1; }
+.a.light .lvl-row.active .lvl-num { color: #0a6028; }
+.a.light .lvl-row.active .lvl-txt { color: #0a2a18; font-weight: bold; }
+.a.light .lvl-row.dim .lvl-txt { color: #aaccbb; }
+
+/* ─── OPTION B: Active Level Hero ─── */
+.b.dark { border-color: #5aaa40; background: #0a1606; color: #fff; }
+.b.dark .hdr  { background: rgba(0,0,0,0.4); color: #fff; font-size: 7.5px; font-weight: bold; padding: 3px 5px; white-space: nowrap; overflow: hidden; }
+.b.dark .obj-label { font-size: 7px; font-weight: bold; color: #5aaa40; letter-spacing: 2px; padding: 2px 5px; }
+.b.dark .cat-badge { margin: 0 5px 2px; background: rgba(90,170,64,0.15); border: 1px solid rgba(90,170,64,0.3); border-radius: 2px; padding: 1px 4px; font-size: 6px; color: #5aaa40; letter-spacing: 1px; display: inline-block; text-transform: uppercase; }
+.b.dark .active-block { flex: 1; padding: 4px 5px; background: rgba(90,170,64,0.12); border-top: 1px solid rgba(90,170,64,0.3); border-bottom: 1px solid rgba(90,170,64,0.3); }
+.b.dark .active-lv { font-size: 7.5px; font-weight: bold; color: #5aaa40; margin-bottom: 2px; letter-spacing: 1px; }
+.b.dark .active-txt { font-size: 7px; color: #d0f0c0; line-height: 1.5; }
+.b.dark .coming-up { padding: 3px 5px; }
+.b.dark .cu-row { display: flex; gap: 3px; align-items: baseline; }
+.b.dark .cu-lv { font-size: 6px; font-weight: bold; color: #3a7a28; min-width: 14px; }
+.b.dark .cu-txt { font-size: 6px; color: #3a6030; line-height: 1.4; flex: 1; }
+
+.b.light { border-color: #3a8a20; background: #f4faf0; color: #111; }
+.b.light .hdr  { background: rgba(0,0,0,0.07); color: #111; font-size: 7.5px; font-weight: bold; padding: 3px 5px; white-space: nowrap; overflow: hidden; }
+.b.light .obj-label { font-size: 7px; font-weight: bold; color: #2a7a18; letter-spacing: 2px; padding: 2px 5px; }
+.b.light .cat-badge { margin: 0 5px 2px; background: rgba(58,138,32,0.1); border: 1px solid rgba(58,138,32,0.25); border-radius: 2px; padding: 1px 4px; font-size: 6px; color: #2a7a18; letter-spacing: 1px; display: inline-block; text-transform: uppercase; }
+.b.light .active-block { flex: 1; padding: 4px 5px; background: rgba(58,138,32,0.08); border-top: 1px solid rgba(58,138,32,0.25); border-bottom: 1px solid rgba(58,138,32,0.25); }
+.b.light .active-lv { font-size: 7.5px; font-weight: bold; color: #2a7a18; margin-bottom: 2px; letter-spacing: 1px; }
+.b.light .active-txt { font-size: 7px; color: #1a4a10; line-height: 1.5; }
+.b.light .coming-up { padding: 3px 5px; }
+.b.light .cu-row { display: flex; gap: 3px; align-items: baseline; }
+.b.light .cu-lv { font-size: 6px; font-weight: bold; color: #8abb70; min-width: 14px; }
+.b.light .cu-txt { font-size: 6px; color: #aacca0; line-height: 1.4; flex: 1; }
+
+/* ─── OPTION C: Olive military / category banner ─── */
+.c.dark { border-color: #8a9a3a; background: #111208; color: #fff; }
+.c.dark .hdr  { background: #1c200a; color: #d0d890; font-size: 7.5px; font-weight: bold; padding: 3px 5px; white-space: nowrap; overflow: hidden; border-bottom: 1px solid rgba(138,154,58,0.4); }
+.c.dark .obj-banner { background: #8a9a3a; padding: 2px 5px; display: flex; align-items: center; justify-content: space-between; }
+.c.dark .obj-banner-type { font-size: 7px; font-weight: bold; color: #111208; letter-spacing: 2px; }
+.c.dark .obj-banner-cat { font-size: 6px; color: rgba(0,0,0,0.55); letter-spacing: 0.5px; text-transform: uppercase; }
+.c.dark .levels { display: flex; flex-direction: column; flex: 1; padding: 4px 5px; gap: 3px; overflow: hidden; }
+.c.dark .lvl-row { display: flex; gap: 3px; align-items: flex-start; padding: 2px 0; border-bottom: 1px solid rgba(138,154,58,0.1); }
+.c.dark .lvl-row:last-child { border-bottom: none; }
+.c.dark .lvl-num { font-size: 6.5px; font-weight: bold; color: #8a9a3a; min-width: 12px; line-height: 1.5; }
+.c.dark .lvl-txt { font-size: 6.5px; color: #b0ba80; line-height: 1.5; flex: 1; }
+.c.dark .lvl-row.active { background: rgba(138,154,58,0.12); border-radius: 2px; padding: 2px 3px; margin: 0 -3px; }
+.c.dark .lvl-row.active .lvl-txt { color: #e8f0a0; }
+
+.c.light { border-color: #6a7a20; background: #f8f9ec; color: #111; }
+.c.light .hdr  { background: #eceea8; color: #2a3010; font-size: 7.5px; font-weight: bold; padding: 3px 5px; white-space: nowrap; overflow: hidden; border-bottom: 1px solid rgba(106,122,32,0.3); }
+.c.light .obj-banner { background: #6a7a20; padding: 2px 5px; display: flex; align-items: center; justify-content: space-between; }
+.c.light .obj-banner-type { font-size: 7px; font-weight: bold; color: #f0f4cc; letter-spacing: 2px; }
+.c.light .obj-banner-cat { font-size: 6px; color: rgba(255,255,255,0.6); letter-spacing: 0.5px; text-transform: uppercase; }
+.c.light .levels { display: flex; flex-direction: column; flex: 1; padding: 4px 5px; gap: 3px; overflow: hidden; }
+.c.light .lvl-row { display: flex; gap: 3px; align-items: flex-start; padding: 2px 0; border-bottom: 1px solid rgba(106,122,32,0.15); }
+.c.light .lvl-row:last-child { border-bottom: none; }
+.c.light .lvl-num { font-size: 6.5px; font-weight: bold; color: #6a7a20; min-width: 12px; line-height: 1.5; }
+.c.light .lvl-txt { font-size: 6.5px; color: #4a5820; line-height: 1.5; flex: 1; }
+.c.light .lvl-row.active { background: rgba(106,122,32,0.1); border-radius: 2px; padding: 2px 3px; margin: 0 -3px; }
+.c.light .lvl-row.active .lvl-txt { color: #1a2a08; font-weight: bold; }
+
+/* ─── OPTION D: Reward strip per level (escalating tint) ─── */
+.d.dark { border-color: #20a0a0; background: #061616; color: #fff; }
+.d.dark .hdr  { background: rgba(0,0,0,0.4); color: #fff; font-size: 7.5px; font-weight: bold; padding: 3px 5px; white-space: nowrap; overflow: hidden; }
+.d.dark .badge-row { display: flex; align-items: baseline; gap: 4px; padding: 2px 5px; }
+.d.dark .badge-type { font-size: 7px; font-weight: bold; color: #20a0a0; letter-spacing: 1.5px; }
+.d.dark .badge-cat  { font-size: 6px; color: #207070; }
+.d.dark .lvl-strip { padding: 3px 5px; border-top: 1px solid rgba(32,160,160,0.15); display: flex; gap: 3px; align-items: flex-start; flex: 1; }
+.d.dark .lvl-strip:nth-child(1) { background: rgba(32,160,160,0.05); }
+.d.dark .lvl-strip:nth-child(2) { background: rgba(32,160,160,0.08); }
+.d.dark .lvl-strip:nth-child(3) { background: rgba(32,160,160,0.12); }
+.d.dark .lvl-strip:nth-child(4) { background: rgba(32,160,160,0.18); border-top-color: rgba(32,160,160,0.3); }
+.d.dark .ls-num { font-size: 6.5px; font-weight: bold; color: #20a0a0; min-width: 12px; line-height: 1.4; }
+.d.dark .ls-txt { font-size: 6.5px; color: #80d0d0; line-height: 1.4; flex: 1; }
+.d.dark .lvl-strip.active .ls-num { color: #40d0d0; }
+.d.dark .lvl-strip.active .ls-txt { color: #d0f8f8; }
+
+.d.light { border-color: #1a8888; background: #edfafa; color: #111; }
+.d.light .hdr  { background: rgba(0,0,0,0.06); color: #111; font-size: 7.5px; font-weight: bold; padding: 3px 5px; white-space: nowrap; overflow: hidden; }
+.d.light .badge-row { display: flex; align-items: baseline; gap: 4px; padding: 2px 5px; }
+.d.light .badge-type { font-size: 7px; font-weight: bold; color: #1a7878; letter-spacing: 1.5px; }
+.d.light .badge-cat  { font-size: 6px; color: #4a9898; }
+.d.light .lvl-strip { padding: 3px 5px; border-top: 1px solid rgba(26,136,136,0.15); display: flex; gap: 3px; align-items: flex-start; flex: 1; }
+.d.light .lvl-strip:nth-child(1) { background: rgba(26,136,136,0.04); }
+.d.light .lvl-strip:nth-child(2) { background: rgba(26,136,136,0.07); }
+.d.light .lvl-strip:nth-child(3) { background: rgba(26,136,136,0.11); }
+.d.light .lvl-strip:nth-child(4) { background: rgba(26,136,136,0.17); border-top-color: rgba(26,136,136,0.3); }
+.d.light .ls-num { font-size: 6.5px; font-weight: bold; color: #1a7878; min-width: 12px; line-height: 1.4; }
+.d.light .ls-txt { font-size: 6.5px; color: #0a4848; line-height: 1.4; flex: 1; }
+.d.light .lvl-strip.active .ls-num { color: #0a5858; }
+.d.light .lvl-strip.active .ls-txt { color: #041818; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════ A ══ -->
+<div>
+<h2>OPTION A — LEVEL LIST (green accent, numbered rows)</h2>
+<div class="desc">Clean list of L1–L4 with the active level highlighted. Teal-green to distinguish from gold (missions) and blue-purple (commands).</div>
+<div class="row">
+
+  <div class="col">
+    <div class="lbl">DARK · L2 active</div>
+    <div class="bg-dark">
+      <div class="ocard a dark">
+        <div class="hdr">Airfield</div>
+        <div class="badge-row"><span class="badge-cost">—</span><span class="badge-type">OBJECTIVE</span></div>
+        <div class="cat">Air / Tempo</div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Aircraft attack twice on placement this turn.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Deal 1 HQ damage.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Deal 1 HQ damage. Draw 1 card.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Deal 4 HQ damage.</span></div>
+        </div>
+      </div>
+      <div class="ocard a dark">
+        <div class="hdr">Artillery Position</div>
+        <div class="badge-row"><span class="badge-cost">—</span><span class="badge-type">OBJECTIVE</span></div>
+        <div class="cat">Damage</div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Deal 1 HQ damage.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Deal 1 hit to 1 enemy unit.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Deal 2 HQ damage.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Deal 3 HQ damage. Deal 1 hit to 1 enemy unit.</span></div>
+        </div>
+      </div>
+      <div class="ocard a dark">
+        <div class="hdr">City</div>
+        <div class="badge-row"><span class="badge-cost">—</span><span class="badge-type">OBJECTIVE</span></div>
+        <div class="cat">Infantry / Defense</div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Adjacent Infantry gain Guard this turn.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Adjacent Infantry +1 all sides this turn.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Adjacent Infantry gain Guard, +1 all sides.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Guard, +2 all sides. Deal 2 HQ damage.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">LIGHT · L2 active</div>
+    <div class="bg-light">
+      <div class="ocard a light">
+        <div class="hdr">Airfield</div>
+        <div class="badge-row"><span class="badge-cost">—</span><span class="badge-type">OBJECTIVE</span></div>
+        <div class="cat">Air / Tempo</div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Aircraft attack twice on placement this turn.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Deal 1 HQ damage.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Deal 1 HQ damage. Draw 1 card.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Deal 4 HQ damage.</span></div>
+        </div>
+      </div>
+      <div class="ocard a light">
+        <div class="hdr">Artillery Position</div>
+        <div class="badge-row"><span class="badge-cost">—</span><span class="badge-type">OBJECTIVE</span></div>
+        <div class="cat">Damage</div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Deal 1 HQ damage.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Deal 1 hit to 1 enemy unit.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Deal 2 HQ damage.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Deal 3 HQ damage + 1 hit to enemy.</span></div>
+        </div>
+      </div>
+      <div class="ocard a light">
+        <div class="hdr">City</div>
+        <div class="badge-row"><span class="badge-cost">—</span><span class="badge-type">OBJECTIVE</span></div>
+        <div class="cat">Infantry / Defense</div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Adjacent Infantry gain Guard this turn.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Adjacent Infantry +1 all sides this turn.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Guard, +1 all sides.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Guard, +2 all sides. Deal 2 HQ damage.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════ B ══ -->
+<div>
+<h2>OPTION B — ACTIVE LEVEL HERO (current level prominent, future dimmed)</h2>
+<div class="desc">Current level effect is shown large in a highlighted block. Upcoming levels listed smaller below as "coming up". Category shows as a pill badge.</div>
+<div class="row">
+
+  <div class="col">
+    <div class="lbl">DARK · L2 active</div>
+    <div class="bg-dark">
+      <div class="ocard b dark">
+        <div class="hdr">Airfield</div>
+        <div class="obj-label">OBJECTIVE</div>
+        <div class="cat-badge">Air / Tempo</div>
+        <div class="active-block">
+          <div class="active-lv">▶ LEVEL 2</div>
+          <div class="active-txt">Deal 1 HQ damage.</div>
+        </div>
+        <div class="coming-up">
+          <div class="cu-row"><span class="cu-lv">L3</span><span class="cu-txt">Deal 1 HQ damage. Draw 1 card.</span></div>
+          <div class="cu-row"><span class="cu-lv">L4</span><span class="cu-txt">Deal 4 HQ damage.</span></div>
+        </div>
+      </div>
+      <div class="ocard b dark">
+        <div class="hdr">Artillery Position</div>
+        <div class="obj-label">OBJECTIVE</div>
+        <div class="cat-badge">Damage</div>
+        <div class="active-block">
+          <div class="active-lv">▶ LEVEL 2</div>
+          <div class="active-txt">Deal 1 hit to 1 enemy unit.</div>
+        </div>
+        <div class="coming-up">
+          <div class="cu-row"><span class="cu-lv">L3</span><span class="cu-txt">Deal 2 HQ damage.</span></div>
+          <div class="cu-row"><span class="cu-lv">L4</span><span class="cu-txt">Deal 3 HQ damage. Deal 1 hit.</span></div>
+        </div>
+      </div>
+      <div class="ocard b dark">
+        <div class="hdr">City</div>
+        <div class="obj-label">OBJECTIVE</div>
+        <div class="cat-badge">Infantry / Defense</div>
+        <div class="active-block">
+          <div class="active-lv">▶ LEVEL 2</div>
+          <div class="active-txt">Adjacent Infantry +1 all sides this turn.</div>
+        </div>
+        <div class="coming-up">
+          <div class="cu-row"><span class="cu-lv">L3</span><span class="cu-txt">Guard, +1 all sides.</span></div>
+          <div class="cu-row"><span class="cu-lv">L4</span><span class="cu-txt">Guard, +2 sides. 2 HQ damage.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">LIGHT · L2 active</div>
+    <div class="bg-light">
+      <div class="ocard b light">
+        <div class="hdr">Airfield</div>
+        <div class="obj-label">OBJECTIVE</div>
+        <div class="cat-badge">Air / Tempo</div>
+        <div class="active-block">
+          <div class="active-lv">▶ LEVEL 2</div>
+          <div class="active-txt">Deal 1 HQ damage.</div>
+        </div>
+        <div class="coming-up">
+          <div class="cu-row"><span class="cu-lv">L3</span><span class="cu-txt">Deal 1 HQ damage. Draw 1 card.</span></div>
+          <div class="cu-row"><span class="cu-lv">L4</span><span class="cu-txt">Deal 4 HQ damage.</span></div>
+        </div>
+      </div>
+      <div class="ocard b light">
+        <div class="hdr">Artillery Position</div>
+        <div class="obj-label">OBJECTIVE</div>
+        <div class="cat-badge">Damage</div>
+        <div class="active-block">
+          <div class="active-lv">▶ LEVEL 2</div>
+          <div class="active-txt">Deal 1 hit to 1 enemy unit.</div>
+        </div>
+        <div class="coming-up">
+          <div class="cu-row"><span class="cu-lv">L3</span><span class="cu-txt">Deal 2 HQ damage.</span></div>
+          <div class="cu-row"><span class="cu-lv">L4</span><span class="cu-txt">Deal 3 HQ damage. Deal 1 hit.</span></div>
+        </div>
+      </div>
+      <div class="ocard b light">
+        <div class="hdr">City</div>
+        <div class="obj-label">OBJECTIVE</div>
+        <div class="cat-badge">Infantry / Defense</div>
+        <div class="active-block">
+          <div class="active-lv">▶ LEVEL 2</div>
+          <div class="active-txt">Adjacent Infantry +1 all sides this turn.</div>
+        </div>
+        <div class="coming-up">
+          <div class="cu-row"><span class="cu-lv">L3</span><span class="cu-txt">Guard, +1 all sides.</span></div>
+          <div class="cu-row"><span class="cu-lv">L4</span><span class="cu-txt">Guard, +2 sides. 2 HQ damage.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════ C ══ -->
+<div>
+<h2>OPTION C — OLIVE MILITARY (category banner, level rows with dividers)</h2>
+<div class="desc">Olive-green fills the OBJECTIVE banner — stark, military feel. Category shown in same banner. All 4 levels listed below with subtle dividers. Active row has background highlight.</div>
+<div class="row">
+
+  <div class="col">
+    <div class="lbl">DARK · L2 active</div>
+    <div class="bg-dark">
+      <div class="ocard c dark">
+        <div class="hdr">Airfield</div>
+        <div class="obj-banner"><span class="obj-banner-type">OBJECTIVE</span><span class="obj-banner-cat">Air / Tempo</span></div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Aircraft attack twice on placement.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Deal 1 HQ damage.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Deal 1 HQ damage. Draw 1 card.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Deal 4 HQ damage.</span></div>
+        </div>
+      </div>
+      <div class="ocard c dark">
+        <div class="hdr">Artillery Position</div>
+        <div class="obj-banner"><span class="obj-banner-type">OBJECTIVE</span><span class="obj-banner-cat">Damage</span></div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Deal 1 HQ damage.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Deal 1 hit to 1 enemy unit.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Deal 2 HQ damage.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Deal 3 HQ damage + 1 hit.</span></div>
+        </div>
+      </div>
+      <div class="ocard c dark">
+        <div class="hdr">City</div>
+        <div class="obj-banner"><span class="obj-banner-type">OBJECTIVE</span><span class="obj-banner-cat">Infantry / Defense</span></div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Adjacent Infantry gain Guard.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Adjacent Infantry +1 all sides.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Guard, +1 all sides.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Guard, +2 sides. 2 HQ dmg.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">LIGHT · L2 active</div>
+    <div class="bg-light">
+      <div class="ocard c light">
+        <div class="hdr">Airfield</div>
+        <div class="obj-banner"><span class="obj-banner-type">OBJECTIVE</span><span class="obj-banner-cat">Air / Tempo</span></div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Aircraft attack twice on placement.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Deal 1 HQ damage.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Deal 1 HQ damage. Draw 1 card.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Deal 4 HQ damage.</span></div>
+        </div>
+      </div>
+      <div class="ocard c light">
+        <div class="hdr">Artillery Position</div>
+        <div class="obj-banner"><span class="obj-banner-type">OBJECTIVE</span><span class="obj-banner-cat">Damage</span></div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Deal 1 HQ damage.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Deal 1 hit to 1 enemy unit.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Deal 2 HQ damage.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Deal 3 HQ damage + 1 hit.</span></div>
+        </div>
+      </div>
+      <div class="ocard c light">
+        <div class="hdr">City</div>
+        <div class="obj-banner"><span class="obj-banner-type">OBJECTIVE</span><span class="obj-banner-cat">Infantry / Defense</span></div>
+        <div class="levels">
+          <div class="lvl-row dim"><span class="lvl-num">L1</span><span class="lvl-txt">Adjacent Infantry gain Guard.</span></div>
+          <div class="lvl-row active"><span class="lvl-num">L2</span><span class="lvl-txt">Adjacent Infantry +1 all sides.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L3</span><span class="lvl-txt">Guard, +1 all sides.</span></div>
+          <div class="lvl-row"><span class="lvl-num">L4</span><span class="lvl-txt">Guard, +2 sides. 2 HQ dmg.</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════ D ══ -->
+<div>
+<h2>OPTION D — ESCALATING STRIPS (teal, each level its own tinted row)</h2>
+<div class="desc">Teal accent. Each level is a full-width strip getting progressively more saturated — visually shows escalation. Active level is brightest. Similar structure to the mission reward strip.</div>
+<div class="row">
+
+  <div class="col">
+    <div class="lbl">DARK · L2 active</div>
+    <div class="bg-dark">
+      <div class="ocard d dark" style="height:auto">
+        <div class="hdr">Airfield</div>
+        <div class="badge-row"><span class="badge-type">OBJECTIVE</span>&nbsp;<span class="badge-cat">· Air / Tempo</span></div>
+        <div class="lvl-strip"><span class="ls-num">L1</span><span class="ls-txt">Aircraft attack twice on placement this turn.</span></div>
+        <div class="lvl-strip active"><span class="ls-num">L2</span><span class="ls-txt">Deal 1 HQ damage.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L3</span><span class="ls-txt">Deal 1 HQ damage. Draw 1 card.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L4</span><span class="ls-txt">Deal 4 HQ damage.</span></div>
+      </div>
+      <div class="ocard d dark" style="height:auto">
+        <div class="hdr">Artillery Position</div>
+        <div class="badge-row"><span class="badge-type">OBJECTIVE</span>&nbsp;<span class="badge-cat">· Damage</span></div>
+        <div class="lvl-strip"><span class="ls-num">L1</span><span class="ls-txt">Deal 1 HQ damage.</span></div>
+        <div class="lvl-strip active"><span class="ls-num">L2</span><span class="ls-txt">Deal 1 hit to 1 enemy unit.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L3</span><span class="ls-txt">Deal 2 HQ damage.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L4</span><span class="ls-txt">Deal 3 HQ damage. Deal 1 hit.</span></div>
+      </div>
+      <div class="ocard d dark" style="height:auto">
+        <div class="hdr">City</div>
+        <div class="badge-row"><span class="badge-type">OBJECTIVE</span>&nbsp;<span class="badge-cat">· Infantry / Defense</span></div>
+        <div class="lvl-strip"><span class="ls-num">L1</span><span class="ls-txt">Adjacent Infantry gain Guard this turn.</span></div>
+        <div class="lvl-strip active"><span class="ls-num">L2</span><span class="ls-txt">Adjacent Infantry +1 all sides.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L3</span><span class="ls-txt">Guard, +1 all sides.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L4</span><span class="ls-txt">Guard, +2 sides. Deal 2 HQ damage.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">LIGHT · L2 active</div>
+    <div class="bg-light">
+      <div class="ocard d light" style="height:auto">
+        <div class="hdr">Airfield</div>
+        <div class="badge-row"><span class="badge-type">OBJECTIVE</span>&nbsp;<span class="badge-cat">· Air / Tempo</span></div>
+        <div class="lvl-strip"><span class="ls-num">L1</span><span class="ls-txt">Aircraft attack twice on placement this turn.</span></div>
+        <div class="lvl-strip active"><span class="ls-num">L2</span><span class="ls-txt">Deal 1 HQ damage.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L3</span><span class="ls-txt">Deal 1 HQ damage. Draw 1 card.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L4</span><span class="ls-txt">Deal 4 HQ damage.</span></div>
+      </div>
+      <div class="ocard d light" style="height:auto">
+        <div class="hdr">Artillery Position</div>
+        <div class="badge-row"><span class="badge-type">OBJECTIVE</span>&nbsp;<span class="badge-cat">· Damage</span></div>
+        <div class="lvl-strip"><span class="ls-num">L1</span><span class="ls-txt">Deal 1 HQ damage.</span></div>
+        <div class="lvl-strip active"><span class="ls-num">L2</span><span class="ls-txt">Deal 1 hit to 1 enemy unit.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L3</span><span class="ls-txt">Deal 2 HQ damage.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L4</span><span class="ls-txt">Deal 3 HQ damage. Deal 1 hit.</span></div>
+      </div>
+      <div class="ocard d light" style="height:auto">
+        <div class="hdr">City</div>
+        <div class="badge-row"><span class="badge-type">OBJECTIVE</span>&nbsp;<span class="badge-cat">· Infantry / Defense</span></div>
+        <div class="lvl-strip"><span class="ls-num">L1</span><span class="ls-txt">Adjacent Infantry gain Guard this turn.</span></div>
+        <div class="lvl-strip active"><span class="ls-num">L2</span><span class="ls-txt">Adjacent Infantry +1 all sides.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L3</span><span class="ls-txt">Guard, +1 all sides.</span></div>
+        <div class="lvl-strip"><span class="ls-num">L4</span><span class="ls-txt">Guard, +2 sides. Deal 2 HQ damage.</span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+</body>
+</html>

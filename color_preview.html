@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SIGNAL — Color Preview</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #333; padding: 24px; display: flex; gap: 20px; flex-wrap: wrap; }
+.option { width: 320px; }
+.option-label { font-family: 'Arial Narrow', Arial; font-size: 12px; font-weight: bold; letter-spacing: 3px; color: #fff; margin-bottom: 10px; background: #1a1a1a; padding: 6px 10px; border-radius: 3px; }
+
+.preview { border-radius: 6px; overflow: hidden; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; gap: 8px; align-items: stretch; }
+
+.stat-box { border-radius: 4px; padding: 8px 10px; width: 80px; flex-shrink: 0; border: 1px solid; }
+.stat-lbl  { font-size: 8px; font-weight: bold; letter-spacing: 2px; font-family: 'Arial Narrow', Arial; }
+.stat-hp   { font-size: 28px; font-weight: bold; line-height: 1; font-family: 'Arial Narrow', Arial; }
+.stat-sub  { font-size: 7px; letter-spacing: 1px; margin-bottom: 3px; }
+.stat-fuel { font-size: 9px; font-weight: bold; }
+
+.board-area { display: grid; grid-template-columns: repeat(3,56px); grid-template-rows: repeat(2,56px); gap: 2px; padding: 4px; border-radius: 3px; }
+.tile { width: 56px; height: 56px; border-radius: 2px; border: 1px solid; display: flex; flex-direction: column; overflow: hidden; }
+.bc-name { font-size: 6.5px; font-weight: bold; font-family: 'Arial Narrow', Arial; padding: 1px 3px; }
+.bc-dirs { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; flex: 1; font-size: 9px; font-weight: bold; text-align: center; font-family: 'Arial Narrow', Arial; }
+.bc-dirs > div { display: flex; align-items: center; justify-content: center; }
+.bc-kw { font-size: 5px; padding: 0 2px; }
+
+.log-box { flex: 1; border-radius: 3px; padding: 6px; font-size: 8px; line-height: 1.7; border: 1px solid; }
+.panel-title { font-size: 7px; font-weight: bold; letter-spacing: 2px; font-family: 'Arial Narrow', Arial; margin-bottom: 3px; }
+
+.hand-row { display: flex; gap: 5px; justify-content: center; }
+.hand-card { width: 68px; height: 92px; border: 1px solid; border-radius: 3px; display: flex; flex-direction: column; overflow: hidden; }
+.hc-hdr  { padding: 2px 3px; font-size: 6px; font-weight: bold; font-family: 'Arial Narrow', Arial; border-bottom: 1px solid rgba(128,128,128,0.2); }
+.hc-cost { font-size: 9px; font-weight: bold; padding: 1px 3px; font-family: 'Arial Narrow', Arial; }
+.hc-type { font-size: 5px; padding: 0 3px; }
+.hc-dirs { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; flex: 1; font-size: 8px; font-weight: bold; text-align: center; font-family: 'Arial Narrow', Arial; }
+.hc-dirs > div { display: flex; align-items: center; justify-content: center; }
+.hc-eff  { font-size: 5px; padding: 2px 3px; line-height: 1.4; flex: 1; overflow: hidden; }
+
+.panel-box { border-radius: 3px; padding: 7px; font-size: 8px; border: 1px solid; }
+.mission-name { font-weight: bold; font-size: 9px; }
+.mission-sub  { font-size: 7px; margin-top: 1px; }
+.mission-eff  { font-size: 7px; margin-top: 4px; line-height: 1.4; }
+
+.btn-end { font-size: 9px; font-weight: bold; font-family: 'Arial Narrow', Arial; padding: 5px; border-radius: 3px; text-align: center; border: 1px solid; letter-spacing: 1px; }
+.turn-info { font-size: 8px; font-family: 'Arial Narrow', Arial; letter-spacing: 1px; text-align: center; }
+
+/* ── A: HIGH CONTRAST DARK ── */
+.a .preview    { background: #111111; }
+.a .stat-box   { background: #1a1a1a; border-color: #333; }
+.a .stat-lbl   { color: #aaaaaa; }
+.a .stat-hp    { color: #ff5555; }
+.a .stat-sub   { color: #666666; }
+.a .stat-fuel  { color: #f0c030; }
+.a .board-area { background: #1f1f1f; }
+.a .tile       { background: #1a1a1a; border-color: #333; }
+.a .tile.p1    { background: #0a1428; border-color: #5599ff; }
+.a .tile.p2    { background: #280a0a; border-color: #ff5555; }
+.a .tile.obj   { background: #1c1a10; border-color: #f0c030; }
+.a .bc-name    { color: #ffffff; background: rgba(0,0,0,0.3); }
+.a .bc-dirs    { color: #ffffff; }
+.a .bc-kw      { color: #aaaaaa; }
+.a .log-box    { background: #0a0a0a; border-color: #222; color: #888; }
+.a .log-p1     { color: #5599ff; }
+.a .log-p2     { color: #ff5555; }
+.a .log-gold   { color: #f0c030; }
+.a .log-dim    { color: #555; }
+.a .hand-card  { background: #1a1a1a; border-color: #333; }
+.a .hand-card.sel { border-color: #5599ff; box-shadow: 0 0 5px rgba(85,153,255,.4); }
+.a .hc-hdr     { color: #ffffff; background: #0a0a0a; }
+.a .hc-cost    { color: #f0c030; }
+.a .hc-type    { color: #666; }
+.a .hc-dirs    { color: #ffffff; }
+.a .hc-eff     { color: #aaa; }
+.a .panel-title { color: #aaa; }
+.a .panel-box  { background: #1a1a1a; border-color: #333; }
+.a .mission-name { color: #f0c030; }
+.a .mission-sub  { color: #666; }
+.a .mission-eff  { color: #aaa; }
+.a .btn-end    { background: #5599ff22; color: #5599ff; border-color: #5599ff; }
+.a .turn-info  { color: #ffffff; }
+
+/* ── B: WARM MILITARY ── */
+.b .preview    { background: #0e0c09; }
+.b .stat-box   { background: #1a1710; border-color: #2a2218; }
+.b .stat-lbl   { color: #c0aa88; }
+.b .stat-hp    { color: #cc2233; }
+.b .stat-sub   { color: #887760; }
+.b .stat-fuel  { color: #d4a830; }
+.b .board-area { background: #1e1a10; }
+.b .tile       { background: #1e1c14; border-color: #2e2a1a; }
+.b .tile.p1    { background: #071018; border-color: #4499dd; }
+.b .tile.p2    { background: #180808; border-color: #dd4433; }
+.b .tile.obj   { background: #221e0e; border-color: #d4a830; }
+.b .bc-name    { color: #e8dfc0; background: rgba(0,0,0,0.35); }
+.b .bc-dirs    { color: #e8dfc0; }
+.b .bc-kw      { color: #a09070; }
+.b .log-box    { background: #0a0906; border-color: #1e1c10; color: #a09070; }
+.b .log-p1     { color: #4499dd; }
+.b .log-p2     { color: #dd4433; }
+.b .log-gold   { color: #d4a830; }
+.b .log-dim    { color: #776655; }
+.b .hand-card  { background: #1a1710; border-color: #2a2218; }
+.b .hand-card.sel { border-color: #4499dd; box-shadow: 0 0 5px rgba(68,153,221,.4); }
+.b .hc-hdr     { color: #e8dfc0; background: #0e0c09; }
+.b .hc-cost    { color: #d4a830; }
+.b .hc-type    { color: #887760; }
+.b .hc-dirs    { color: #e8dfc0; }
+.b .hc-eff     { color: #c0aa88; }
+.b .panel-title { color: #c0aa88; }
+.b .panel-box  { background: #1a1710; border-color: #2a2218; }
+.b .mission-name { color: #d4a830; }
+.b .mission-sub  { color: #776655; }
+.b .mission-eff  { color: #c0aa88; }
+.b .btn-end    { background: #6a3a0a; color: #e0b840; border-color: #8a5010; }
+.b .turn-info  { color: #e8dfc0; }
+
+/* ── C: DARK SLATE ── */
+.c .preview    { background: #1a1a2a; }
+.c .stat-box   { background: #22223a; border-color: #33334a; }
+.c .stat-lbl   { color: #b0b0c0; }
+.c .stat-hp    { color: #ff6644; }
+.c .stat-sub   { color: #707080; }
+.c .stat-fuel  { color: #ffcc44; }
+.c .board-area { background: #222234; }
+.c .tile       { background: #1e1e30; border-color: #2e2e44; }
+.c .tile.p1    { background: #0a1224; border-color: #55aaff; }
+.c .tile.p2    { background: #240a08; border-color: #ff6644; }
+.c .tile.obj   { background: #28261a; border-color: #ffcc44; }
+.c .bc-name    { color: #f0f0f0; background: rgba(0,0,0,0.3); }
+.c .bc-dirs    { color: #f0f0f0; }
+.c .bc-kw      { color: #b0b0c0; }
+.c .log-box    { background: #141420; border-color: #222236; color: #b0b0c0; }
+.c .log-p1     { color: #55aaff; }
+.c .log-p2     { color: #ff6644; }
+.c .log-gold   { color: #ffcc44; }
+.c .log-dim    { color: #606070; }
+.c .hand-card  { background: #22223a; border-color: #33334a; }
+.c .hand-card.sel { border-color: #55aaff; box-shadow: 0 0 5px rgba(85,170,255,.4); }
+.c .hc-hdr     { color: #f0f0f0; background: #141420; }
+.c .hc-cost    { color: #ffcc44; }
+.c .hc-type    { color: #707080; }
+.c .hc-dirs    { color: #f0f0f0; }
+.c .hc-eff     { color: #b0b0c0; }
+.c .panel-title { color: #b0b0c0; }
+.c .panel-box  { background: #22223a; border-color: #33334a; }
+.c .mission-name { color: #ffcc44; }
+.c .mission-sub  { color: #707080; }
+.c .mission-eff  { color: #b0b0c0; }
+.c .btn-end    { background: #3a3060; color: #ffcc44; border-color: #5050a0; }
+.c .turn-info  { color: #f0f0f0; }
+
+/* ── D: PARCHMENT (LIGHT WARM) ── */
+.d .preview    { background: #ede5cc; }
+.d .stat-box   { background: #d8cdb0; border-color: #b8a888; }
+.d .stat-lbl   { color: #5a4a2a; }
+.d .stat-hp    { color: #992222; }
+.d .stat-sub   { color: #8a7a58; }
+.d .stat-fuel  { color: #7a5a10; }
+.d .board-area { background: #c8bc9a; }
+.d .tile       { background: #d8cdb0; border-color: #b8a888; }
+.d .tile.p1    { background: #c0cce0; border-color: #1a4a99; }
+.d .tile.p2    { background: #e0c0c0; border-color: #992222; }
+.d .tile.obj   { background: #d8c890; border-color: #9a7a18; }
+.d .bc-name    { color: #1a1408; background: rgba(255,255,255,0.35); }
+.d .bc-dirs    { color: #1a1408; }
+.d .bc-kw      { color: #5a4a2a; }
+.d .log-box    { background: #f5eedd; border-color: #c8b888; color: #4a3a1a; }
+.d .log-p1     { color: #1a4a99; }
+.d .log-p2     { color: #992222; }
+.d .log-gold   { color: #7a5a10; }
+.d .log-dim    { color: #9a8a68; }
+.d .hand-card  { background: #ede5cc; border-color: #b8a888; }
+.d .hand-card.sel { border-color: #1a4a99; box-shadow: 0 0 5px rgba(26,74,153,.3); }
+.d .hc-hdr     { color: #1a1408; background: #d8cdb0; }
+.d .hc-cost    { color: #7a5a10; }
+.d .hc-type    { color: #8a7a58; }
+.d .hc-dirs    { color: #1a1408; }
+.d .hc-eff     { color: #4a3a1a; }
+.d .panel-title { color: #5a4a2a; }
+.d .panel-box  { background: #f5eedd; border-color: #c8b888; }
+.d .mission-name { color: #7a5a10; }
+.d .mission-sub  { color: #9a8a68; }
+.d .mission-eff  { color: #4a3a1a; }
+.d .btn-end    { background: #1a4a99; color: #ffffff; border-color: #0e2f66; }
+.d .turn-info  { color: #2a1a08; }
+
+/* ── E: CLEAN LIGHT (modern card game) ── */
+.e .preview    { background: #f2f4f8; }
+.e .stat-box   { background: #ffffff; border-color: #d0d4e0; }
+.e .stat-lbl   { color: #666880; }
+.e .stat-hp    { color: #cc2233; }
+.e .stat-sub   { color: #9999aa; }
+.e .stat-fuel  { color: #bb8800; }
+.e .board-area { background: #dde0e8; }
+.e .tile       { background: #ffffff; border-color: #ccd0dd; }
+.e .tile.p1    { background: #e8f0ff; border-color: #2266cc; }
+.e .tile.p2    { background: #ffe8e8; border-color: #cc2233; }
+.e .tile.obj   { background: #fff8e0; border-color: #cc9900; }
+.e .bc-name    { color: #111122; background: rgba(255,255,255,0.6); }
+.e .bc-dirs    { color: #111122; }
+.e .bc-kw      { color: #6666aa; }
+.e .log-box    { background: #ffffff; border-color: #d0d4e0; color: #444455; }
+.e .log-p1     { color: #2266cc; }
+.e .log-p2     { color: #cc2233; }
+.e .log-gold   { color: #bb8800; }
+.e .log-dim    { color: #9999aa; }
+.e .hand-card  { background: #ffffff; border-color: #d0d4e0; }
+.e .hand-card.sel { border-color: #2266cc; box-shadow: 0 0 5px rgba(34,102,204,.3); }
+.e .hc-hdr     { color: #111122; background: #f2f4f8; }
+.e .hc-cost    { color: #bb8800; }
+.e .hc-type    { color: #9999aa; }
+.e .hc-dirs    { color: #111122; }
+.e .hc-eff     { color: #444455; }
+.e .panel-title { color: #666880; }
+.e .panel-box  { background: #ffffff; border-color: #d0d4e0; }
+.e .mission-name { color: #bb8800; }
+.e .mission-sub  { color: #9999aa; }
+.e .mission-eff  { color: #444455; }
+.e .btn-end    { background: #2266cc; color: #ffffff; border-color: #1144aa; }
+.e .turn-info  { color: #111122; }
+
+/* ── F: DEEP NAVY ── */
+.f .preview    { background: #07101e; }
+.f .stat-box   { background: #0d1a2e; border-color: #1a2e48; }
+.f .stat-lbl   { color: #8090b0; }
+.f .stat-hp    { color: #ff4422; }
+.f .stat-sub   { color: #4a5a70; }
+.f .stat-fuel  { color: #00ddff; }
+.f .board-area { background: #0d1828; }
+.f .tile       { background: #0d1a2e; border-color: #1a2e48; }
+.f .tile.p1    { background: #001830; border-color: #00aaff; }
+.f .tile.p2    { background: #200808; border-color: #ff4422; }
+.f .tile.obj   { background: #1a1a08; border-color: #aaaa00; }
+.f .bc-name    { color: #e0f0ff; background: rgba(0,0,0,0.4); }
+.f .bc-dirs    { color: #e0f0ff; }
+.f .bc-kw      { color: #8090b0; }
+.f .log-box    { background: #040c18; border-color: #0e1e30; color: #8090b0; }
+.f .log-p1     { color: #00aaff; }
+.f .log-p2     { color: #ff4422; }
+.f .log-gold   { color: #00ddff; }
+.f .log-dim    { color: #304050; }
+.f .hand-card  { background: #0d1a2e; border-color: #1a2e48; }
+.f .hand-card.sel { border-color: #00aaff; box-shadow: 0 0 5px rgba(0,170,255,.4); }
+.f .hc-hdr     { color: #e0f0ff; background: #040c18; }
+.f .hc-cost    { color: #00ddff; }
+.f .hc-type    { color: #4a5a70; }
+.f .hc-dirs    { color: #e0f0ff; }
+.f .hc-eff     { color: #8090b0; }
+.f .panel-title { color: #8090b0; }
+.f .panel-box  { background: #0d1a2e; border-color: #1a2e48; }
+.f .mission-name { color: #00ddff; }
+.f .mission-sub  { color: #4a5a70; }
+.f .mission-eff  { color: #8090b0; }
+.f .btn-end    { background: #003366; color: #00aaff; border-color: #0055aa; }
+.f .turn-info  { color: #e0f0ff; }
+
+/* ── G: LIGHT STEEL (tactical map) ── */
+.g .preview    { background: #d8dce8; }
+.g .stat-box   { background: #eaecf4; border-color: #b0b8d0; }
+.g .stat-lbl   { color: #44485a; }
+.g .stat-hp    { color: #cc1111; }
+.g .stat-sub   { color: #6a7080; }
+.g .stat-fuel  { color: #5566aa; }
+.g .board-area { background: #c4c8d8; }
+.g .tile       { background: #dce0ec; border-color: #b0b8d0; }
+.g .tile.p1    { background: #c8d4f0; border-color: #1155cc; }
+.g .tile.p2    { background: #f0c8c8; border-color: #cc1111; }
+.g .tile.obj   { background: #f0eec0; border-color: #888800; }
+.g .bc-name    { color: #111122; background: rgba(255,255,255,0.5); }
+.g .bc-dirs    { color: #111122; }
+.g .bc-kw      { color: #44485a; }
+.g .log-box    { background: #eaecf4; border-color: #b0b8d0; color: #33364a; }
+.g .log-p1     { color: #1155cc; }
+.g .log-p2     { color: #cc1111; }
+.g .log-gold   { color: #7a6600; }
+.g .log-dim    { color: #8090a0; }
+.g .hand-card  { background: #eaecf4; border-color: #b0b8d0; }
+.g .hand-card.sel { border-color: #1155cc; box-shadow: 0 0 5px rgba(17,85,204,.3); }
+.g .hc-hdr     { color: #111122; background: #d8dce8; }
+.g .hc-cost    { color: #5566aa; }
+.g .hc-type    { color: #6a7080; }
+.g .hc-dirs    { color: #111122; }
+.g .hc-eff     { color: #33364a; }
+.g .panel-title { color: #44485a; }
+.g .panel-box  { background: #eaecf4; border-color: #b0b8d0; }
+.g .mission-name { color: #5566aa; }
+.g .mission-sub  { color: #6a7080; }
+.g .mission-eff  { color: #33364a; }
+.g .btn-end    { background: #1155cc; color: #ffffff; border-color: #0033aa; }
+.g .turn-info  { color: #111122; }
+</style>
+</head>
+<body>
+
+<!-- reusable board snippet via JS -->
+<script>
+function board(cls) {
+  const units = [
+    { cls:'', label:'', dirs:null, kw:'' },
+    { cls:'obj', label:'Airfield L2', dirs:null, kw:'' },
+    { cls:'p2', label:'Panzer II', dirs:['','5','','2','T','2','','5',''], kw:'' },
+    { cls:'p1', label:'Sherman', dirs:['','7','','1','T','6','','4',''], kw:'Armor' },
+    { cls:'', label:'', dirs:null, kw:'' },
+    { cls:'p1', label:'Rifle Squad', dirs:['','4','','3','I','3','','4',''], kw:'' },
+  ];
+  return `<div class="board-area">${units.map(u=>`
+    <div class="tile ${u.cls}">
+      ${u.label ? `<div class="bc-name">${u.label}</div>` : ''}
+      ${u.dirs ? `<div class="bc-dirs">${u.dirs.map(v=>`<div>${v}</div>`).join('')}</div>` : ''}
+      ${u.kw ? `<div class="bc-kw">${u.kw}</div>` : ''}
+    </div>`).join('')}
+  </div>`;
+}
+
+function hand(cls) {
+  return `<div class="hand-row">
+    <div class="hand-card sel">
+      <div class="hc-hdr">Rifle Squad</div>
+      <div class="hc-cost">1</div>
+      <div class="hc-type">INFANTRY · COMMON</div>
+      <div class="hc-dirs"><div></div><div>4</div><div></div><div>3</div><div style="font-size:4px;opacity:.5">I</div><div>3</div><div></div><div>4</div><div></div></div>
+    </div>
+    <div class="hand-card">
+      <div class="hc-hdr">Field Medic</div>
+      <div class="hc-cost">1</div>
+      <div class="hc-type">COMMAND · COMMON</div>
+      <div class="hc-eff">Remove Suppression from 1 friendly unit.</div>
+    </div>
+    <div class="hand-card" style="opacity:.4">
+      <div class="hc-hdr">Heavy Bomber</div>
+      <div class="hc-cost">4</div>
+      <div class="hc-type">AIRCRAFT · COMMON</div>
+      <div class="hc-dirs"><div></div><div>6</div><div></div><div>6</div><div style="font-size:4px;opacity:.5">A</div><div>6</div><div></div><div>6</div><div></div></div>
+    </div>
+  </div>`;
+}
+
+function preview(id, letter, label) {
+  document.getElementById(id).innerHTML = `
+    <div class="option-label">${letter} — ${label}</div>
+    <div class="preview">
+      <div class="row">
+        <div class="stat-box">
+          <div class="stat-lbl">P 2</div>
+          <div class="stat-hp">17</div>
+          <div class="stat-sub">HQ HEALTH</div>
+          <div class="stat-fuel">3 / 6 Fuel</div>
+        </div>
+        ${board(id)}
+        <div class="log-box">
+          <div class="panel-title">BATTLE LOG</div>
+          <div class="log-p2">Panzer II placed</div>
+          <div class="log-p1">Sherman attacked</div>
+          <div class="log-gold">Airfield L2: +1 HQ dmg</div>
+          <div class="log-dim">--- Round 4 ---</div>
+          <div class="log-p1">Rifle Squad placed</div>
+          <div class="log-p2" style="font-size:8px">Suppressed (7 vs 5)</div>
+        </div>
+      </div>
+      <div class="row" style="gap:6px;align-items:center">
+        <div class="turn-info" style="flex:1">Round 5 — P1 to play</div>
+        <div class="btn-end" style="width:90px">END TURN</div>
+      </div>
+      <div class="stat-box" style="width:100%">
+        <div class="stat-lbl">P 1</div>
+        <div class="stat-hp">13</div>
+        <div class="stat-sub">HQ HEALTH</div>
+        <div class="stat-fuel">4 / 6 Fuel</div>
+      </div>
+      <div class="panel-title">YOUR HAND</div>
+      ${hand(id)}
+      <div class="panel-box">
+        <div class="panel-title">ACTIVE MISSIONS</div>
+        <div class="mission-name">Blitz Assault</div>
+        <div class="mission-sub">2 turns remaining</div>
+        <div class="mission-eff">Destroy 2 enemies in one turn → Draw 2 + 1 Fuel</div>
+      </div>
+    </div>`;
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  preview('pA','A','HIGH CONTRAST DARK');
+  preview('pB','B','WARM MILITARY');
+  preview('pC','C','DARK SLATE');
+  preview('pD','D','PARCHMENT (LIGHT)');
+  preview('pE','E','CLEAN LIGHT');
+  preview('pF','F','DEEP NAVY');
+  preview('pG','G','LIGHT STEEL');
+});
+</script>
+
+<div class="option a" id="pA"></div>
+<div class="option b" id="pB"></div>
+<div class="option c" id="pC"></div>
+<div class="option d" id="pD"></div>
+<div class="option e" id="pE"></div>
+<div class="option f" id="pF"></div>
+<div class="option g" id="pG"></div>
+
+</body>
+</html>

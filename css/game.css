@@ -240,6 +240,7 @@ body[data-theme="light"] .theme-toggle {
   margin-bottom: 6px;
 }
 .stat-fuel { font-size: 12px; color: var(--gold); font-weight: bold; }
+.stat-cards { font-size: 11px; color: #888; margin-top: 2px; }
 
 /* Buttons between stats */
 .side-controls {

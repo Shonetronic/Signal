@@ -7,6 +7,9 @@
 </head>
 <body>
 
+  <!-- Theme toggle — fixed top-right, matches game.html -->
+  <button id="theme-toggle" class="theme-toggle">☾ LIGHT</button>
+
   <div id="lobby">
     <div class="lobby-title">SIGNAL</div>
     <div class="lobby-subtitle">WWII TACTICAL CARD GAME — PROTOTYPE</div>
@@ -73,6 +76,20 @@
     document.getElementById('code-input').addEventListener('keydown', e => {
       if (e.key === 'Enter') document.getElementById('btn-join').click();
     });
+
+    // Theme toggle — same 'signal-theme' localStorage key as game.html, so the choice carries over.
+    (function initTheme() {
+      const saved = localStorage.getItem('signal-theme');
+      if (saved === 'light') document.body.dataset.theme = 'light';
+      const btn = document.getElementById('theme-toggle');
+      btn.textContent = document.body.dataset.theme === 'light' ? '☀ DARK' : '☾ LIGHT';
+      btn.addEventListener('click', () => {
+        const next = document.body.dataset.theme === 'light' ? 'dark' : 'light';
+        document.body.dataset.theme = next;
+        localStorage.setItem('signal-theme', next);
+        btn.textContent = next === 'light' ? '☀ DARK' : '☾ LIGHT';
+      });
+    })();
   </script>
 
 </body>

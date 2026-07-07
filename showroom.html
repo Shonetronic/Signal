@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SIGNAL — Card Showroom</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #1a1e24;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    #page-header {
+      background: #111518;
+      padding: 14px 24px 10px;
+      border-bottom: 2px solid #2a2e34;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    #page-title {
+      font-size: 15px;
+      font-weight: bold;
+      letter-spacing: 3px;
+      color: #c8a84b;
+      margin-bottom: 10px;
+    }
+
+    #filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .filter-group { display: flex; gap: 3px; flex-wrap: wrap; }
+
+    .sep {
+      width: 1px;
+      height: 22px;
+      background: #333;
+      margin: 0 4px;
+      align-self: center;
+    }
+
+    .filter-btn {
+      background: #22262c;
+      border: 1px solid #3a3e44;
+      color: #999;
+      padding: 3px 9px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 0.1s, color 0.1s;
+    }
+    .filter-btn:hover { background: #2e3238; color: #ccc; }
+    .filter-btn.active {
+      background: #c8a84b;
+      border-color: #c8a84b;
+      color: #111;
+      font-weight: bold;
+    }
+
+    #card-count {
+      margin-left: auto;
+      font-size: 11px;
+      color: #666;
+    }
+
+    /* ── Grid ── */
+    #card-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 18px 22px;
+      align-items: flex-start;
+    }
+
+    /* ── Card base ── */
+    .card {
+      width: 172px;
+      background: #fff;
+      color: #111;
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid #444;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .type-command  { background: #eef2f8; }
+    .type-mission  { background: #fdf6e8; }
+    .type-objective{ background: #f0f5ee; }
+
+    /* Header row */
+    .c-header {
+      padding: 5px 7px 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1.5px solid #000;
+      gap: 4px;
+    }
+    .c-name {
+      font-size: 9px;
+      font-weight: bold;
+      line-height: 1.3;
+      flex: 1;
+    }
+    .c-cost {
+      font-size: 11px;
+      font-weight: bold;
+      background: #111;
+      color: #f0c040;
+      border-radius: 3px;
+      padding: 1px 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .c-cost-free {
+      font-size: 7px;
+      color: #999;
+      padding-top: 3px;
+      flex-shrink: 0;
+    }
+
+    /* Meta row */
+    .c-meta {
+      padding: 2px 7px;
+      font-size: 7px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .badge-new {
+      background: #c84020;
+      color: #fff;
+      font-size: 6px;
+      font-weight: bold;
+      padding: 1px 3px;
+      border-radius: 2px;
+      letter-spacing: 0;
+    }
+    .rarity-rare { color: #b07820; font-weight: bold; }
+
+    /* Directions (unit) */
+    .c-dirs {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
+      gap: 2px;
+      padding: 4px;
+      border-bottom: 1.5px solid #000;
+      height: 78px;
+    }
+    .dir-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .dir-cell.boxed {
+      border: 1px solid #aaa;
+      border-radius: 2px;
+    }
+    .dir-lbl { font-size: 5px; color: #999; line-height: 1; }
+    .dir-val { font-size: 16px; font-weight: bold; line-height: 1.1; }
+    .dir-total-lbl { font-size: 5px; color: #bbb; text-transform: uppercase; }
+    .dir-total-val { font-size: 9px; font-weight: bold; color: #555; }
+
+    /* Keywords */
+    .c-keywords {
+      padding: 3px 5px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      border-bottom: 1px solid #e0e0e0;
+      min-height: 17px;
+    }
+    .kw {
+      border: 1px solid #666;
+      border-radius: 2px;
+      padding: 0 3px;
+      font-size: 6px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    /* Ability */
+    .c-ability {
+      padding: 4px 7px;
+      font-size: 7px;
+      line-height: 1.5;
+      color: #333;
+      font-style: italic;
+      border-bottom: 1px solid #eee;
+    }
+
+    /* Command effect */
+    .c-effect {
+      padding: 6px 7px;
+      font-size: 7.5px;
+      line-height: 1.55;
+      color: #222;
+      flex: 1;
+    }
+
+    /* Mission req + reward */
+    .c-req {
+      padding: 5px 7px;
+      font-size: 7px;
+      line-height: 1.45;
+      color: #555;
+      font-style: italic;
+      border-bottom: 1px solid #ddd;
+      flex: 1;
+    }
+    .c-reward {
+      padding: 5px 7px;
+      background: #1c3a1c;
+      color: #a8d870;
+      font-size: 7px;
+      line-height: 1.45;
+    }
+    .c-reward-label {
+      display: block;
+      font-size: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      opacity: 0.6;
+      margin-bottom: 1px;
+    }
+
+    /* Objective levels */
+    .c-levels { padding: 4px 7px; flex: 1; }
+    .obj-lvl {
+      display: flex;
+      gap: 5px;
+      padding: 2px 0;
+      border-bottom: 1px solid #e8e8e8;
+      font-size: 7px;
+      line-height: 1.35;
+    }
+    .obj-lvl:last-child { border-bottom: none; }
+    .lvl-num { font-weight: bold; color: #999; min-width: 14px; flex-shrink: 0; }
+    .lvl-txt { color: #333; }
+
+    /* Footer */
+    .c-footer {
+      padding: 3px 7px;
+      background: #f0f0f0;
+      border-top: 1px solid #ddd;
+      font-size: 6px;
+      color: #777;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Class header tints */
+    .cls-Infantry  .c-header { background: #f4f8f0; border-bottom-color: #4a7a2a; }
+    .cls-Tank      .c-header { background: #f0f2f5; border-bottom-color: #4a6a7a; }
+    .cls-Artillery .c-header { background: #f8f2ee; border-bottom-color: #8a4020; }
+    .cls-Aircraft  .c-header { background: #eef3f8; border-bottom-color: #2a6aaa; }
+    .cls-Commander .c-header { background: #f8f5e8; border-bottom-color: #9a7010; }
+    .cls-Naval     .c-header { background: #eeeef8; border-bottom-color: #1a3a7a; }
+  </style>
+</head>
+<body>
+
+<div id="page-header">
+  <div id="page-title">SIGNAL — CARD SHOWROOM</div>
+  <div id="filter-bar">
+    <div class="filter-group">
+      <button class="filter-btn active" data-f="type" data-v="all">All</button>
+      <button class="filter-btn" data-f="type" data-v="unit">Units</button>
+      <button class="filter-btn" data-f="type" data-v="command">Commands</button>
+      <button class="filter-btn" data-f="type" data-v="mission">Missions</button>
+      <button class="filter-btn" data-f="type" data-v="objective">Objectives</button>
+    </div>
+    <div class="sep"></div>
+    <div class="filter-group" id="cls-filter-group">
+      <button class="filter-btn active" data-f="cls" data-v="all">All Classes</button>
+      <button class="filter-btn" data-f="cls" data-v="Infantry">Infantry</button>
+      <button class="filter-btn" data-f="cls" data-v="Tank">Tank</button>
+      <button class="filter-btn" data-f="cls" data-v="Artillery">Artillery</button>
+      <button class="filter-btn" data-f="cls" data-v="Aircraft">Aircraft</button>
+      <button class="filter-btn" data-f="cls" data-v="Commander">Commander</button>
+      <button class="filter-btn" data-f="cls" data-v="Naval">Naval</button>
+    </div>
+    <div class="sep"></div>
+    <div class="filter-group">
+      <button class="filter-btn active" data-f="rarity" data-v="all">All Rarities</button>
+      <button class="filter-btn" data-f="rarity" data-v="Common">Common</button>
+      <button class="filter-btn" data-f="rarity" data-v="Rare">Rare</button>
+    </div>
+    <span id="card-count"></span>
+  </div>
+</div>
+
+<div id="card-grid"></div>
+
+<script type="module">
+import { CARDS } from './js/cards.js?v=1783341581';
+
+const NEW_THRESHOLD = 59;
+
+const filters = { type: 'all', cls: 'all', rarity: 'all' };
+
+function kws(card) {
+  if (!card.keyword) return [];
+  return Array.isArray(card.keyword) ? card.keyword : [card.keyword];
+}
+
+function metaRow(card, label) {
+  const isNew = card.id >= NEW_THRESHOLD;
+  const rarityHtml = card.rarity
+    ? ` · <span class="rarity-${card.rarity.toLowerCase()}">${card.rarity}</span>`
+    : '';
+  const newBadge = isNew ? '<span class="badge-new">NEW</span>' : '';
+  return `<div class="c-meta"><span>${label}${rarityHtml}</span>${newBadge}</div>`;
+}
+
+function buildUnit(card) {
+  const kwHtml = kws(card).map(k => `<span class="kw">${k}</span>`).join('');
+  const total = card.n + card.e + card.s + card.w;
+  return `
+    <div class="card type-unit cls-${card.cls}" data-id="${card.id}">
+      <div class="c-header">
+        <div class="c-name">${card.name}</div>
+        <div class="c-cost">${card.cost}⛽</div>
+      </div>
+      ${metaRow(card, card.cls)}
+      <div class="c-dirs">
+        <div class="dir-cell"></div>
+        <div class="dir-cell boxed"><div class="dir-lbl">N</div><div class="dir-val">${card.n}</div></div>
+        <div class="dir-cell"></div>
+        <div class="dir-cell boxed"><div class="dir-lbl">W</div><div class="dir-val">${card.w}</div></div>
+        <div class="dir-cell"><div class="dir-total-lbl">Total</div><div class="dir-total-val">${total}</div></div>
+        <div class="dir-cell boxed"><div class="dir-lbl">E</div><div class="dir-val">${card.e}</div></div>
+        <div class="dir-cell"></div>
+        <div class="dir-cell boxed"><div class="dir-lbl">S</div><div class="dir-val">${card.s}</div></div>
+        <div class="dir-cell"></div>
+      </div>
+      <div class="c-keywords">${kwHtml}</div>
+      ${card.ability ? `<div class="c-ability">${card.ability}</div>` : ''}
+      <div class="c-footer"><span>AP ${card.ap}</span><span>#${card.id}</span></div>
+    </div>`;
+}
+
+function buildCommand(card) {
+  return `
+    <div class="card type-command" data-id="${card.id}">
+      <div class="c-header">
+        <div class="c-name">${card.name}</div>
+        <div class="c-cost">${card.cost}⛽</div>
+      </div>
+      ${metaRow(card, 'Command')}
+      <div class="c-effect">${card.effect || ''}</div>
+      <div class="c-footer"><span>AP ${card.ap}</span><span>#${card.id}</span></div>
+    </div>`;
+}
+
+function buildMission(card) {
+  const costEl = card.cost > 0
+    ? `<div class="c-cost">${card.cost}⛽</div>`
+    : `<div class="c-cost-free">Free</div>`;
+  return `
+    <div class="card type-mission" data-id="${card.id}">
+      <div class="c-header">
+        <div class="c-name">${card.name}</div>
+        ${costEl}
+      </div>
+      ${metaRow(card, 'Mission')}
+      <div class="c-req">${card.req || ''}</div>
+      <div class="c-reward"><span class="c-reward-label">Reward</span>${card.reward || ''}</div>
+      <div class="c-footer">
+        <span>AP ${card.ap}${card.limitTurns ? ` · ${card.limitTurns}T` : ''}</span>
+        <span>#${card.id}</span>
+      </div>
+    </div>`;
+}
+
+function buildObjective(card) {
+  return `
+    <div class="card type-objective" data-id="${card.id}">
+      <div class="c-header">
+        <div class="c-name">${card.name}</div>
+        <div style="font-size:7px;color:#888;font-style:italic;padding-top:2px">${card.category || ''}</div>
+      </div>
+      <div class="c-meta"><span>Objective</span></div>
+      <div class="c-levels">
+        <div class="obj-lvl"><span class="lvl-num">L1</span><span class="lvl-txt">${card.l1 || '—'}</span></div>
+        <div class="obj-lvl"><span class="lvl-num">L2</span><span class="lvl-txt">${card.l2 || '—'}</span></div>
+        <div class="obj-lvl"><span class="lvl-num">L3</span><span class="lvl-txt">${card.l3 || '—'}</span></div>
+        <div class="obj-lvl"><span class="lvl-num">L4</span><span class="lvl-txt">${card.l4 || '—'}</span></div>
+      </div>
+      <div class="c-footer"><span>#${card.id}</span></div>
+    </div>`;
+}
+
+function buildCard(card) {
+  if (card.type === 'unit')      return buildUnit(card);
+  if (card.type === 'command')   return buildCommand(card);
+  if (card.type === 'mission')   return buildMission(card);
+  if (card.type === 'objective') return buildObjective(card);
+  return '';
+}
+
+const TYPE_ORDER = { unit: 0, command: 1, mission: 2, objective: 3 };
+
+function render() {
+  const filtered = CARDS.filter(c => {
+    if (filters.type !== 'all' && c.type !== filters.type) return false;
+    if (filters.cls !== 'all' && c.cls !== filters.cls) return false;
+    if (filters.rarity !== 'all' && c.rarity && c.rarity !== filters.rarity) return false;
+    return true;
+  }).sort((a, b) => {
+    const tDiff = (TYPE_ORDER[a.type] ?? 4) - (TYPE_ORDER[b.type] ?? 4);
+    if (tDiff !== 0) return tDiff;
+    const costDiff = (a.cost ?? 0) - (b.cost ?? 0);
+    if (costDiff !== 0) return costDiff;
+    return a.name.localeCompare(b.name);
+  });
+
+  document.getElementById('card-grid').innerHTML = filtered.map(buildCard).join('');
+  document.getElementById('card-count').textContent = `${filtered.length} / ${CARDS.length} cards`;
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const f = btn.dataset.f;
+    const v = btn.dataset.v;
+    document.querySelectorAll(`.filter-btn[data-f="${f}"]`).forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filters[f] = v;
+    // Selecting a non-unit type: reset class filter
+    if (f === 'type' && v !== 'unit' && v !== 'all') {
+      filters.cls = 'all';
+      document.querySelectorAll('.filter-btn[data-f="cls"]').forEach(b => b.classList.remove('active'));
+      document.querySelector('.filter-btn[data-f="cls"][data-v="all"]').classList.add('active');
+    }
+    render();
+  });
+});
+
+render();
+</script>
+
+</body>
+</html>

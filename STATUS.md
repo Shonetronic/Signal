@@ -20,8 +20,10 @@ Legend: ✅ done | ⚠️ partial | ❌ missing
 | Hit sequence (Heavy Armor) | ✅ | Armor absorbs 2 hits |
 | Terrain placement restrictions | ✅ | Water = Naval only, Forest = no Tanks, etc. |
 | Firebase multiplayer | ✅ | Create/Join game codes, real-time sync |
-| Deck builder | ❌ | 3 hardcoded starter decks only |
-| GitHub Pages deploy | ❌ | Requires local `npm run dev` |
+| P2 board flip + direction | ✅ | P2 sees board from their side; engine and display both correct |
+| Card preview on hover | ✅ | Hovering board tile with unit shows card ability text |
+| Deck builder | ❌ | 4 hardcoded starter decks only |
+| GitHub Pages deploy | ✅ | Live at github.com/Shonetronic/Signal |
 
 ---
 
@@ -32,8 +34,8 @@ Legend: ✅ done | ⚠️ partial | ❌ missing
 | Guard | ✅ | Attackers must target Guard units first; bypassed when Suppressed |
 | Armor | ✅ | Absorbs 1 hit before Suppressed |
 | Heavy Armor | ✅ | Absorbs 2 hits before Suppressed |
-| Double Attack | ✅ | Auto-stays in targeting mode after first attack |
-| Bombard | ✅ | Attacks 2 tiles away in strongest direction; bypasses Guard |
+| Double Attack | ✅ | Auto-stays in targeting mode after first attack; nerfed -2 total stats across all DA cards |
+| Bombard | ✅ | Attacks any enemy in same row or column; bypasses Guard |
 | Breakthrough | ❌ | Not implemented in combat logic |
 | Inspire | ❌ | Not implemented |
 | Airborne | ❌ | Not implemented (should allow placement on any terrain) |

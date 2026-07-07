@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SIGNAL — Card Preview</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #222; padding: 32px; display: flex; flex-direction: column; gap: 56px; }
+
+h2 { font-family: 'Arial Narrow', Arial; letter-spacing: 3px; font-size: 13px; margin-bottom: 6px; color: #fff; }
+.desc { font-size: 11px; color: #888; font-family: 'Arial Narrow', Arial; letter-spacing: 1px; margin-bottom: 22px; }
+.row { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; }
+.col { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.lbl { font-size: 8px; color: #666; letter-spacing: 2px; font-family: 'Arial Narrow', Arial; }
+.bg-dark  { background: #111; padding: 14px; border-radius: 6px; }
+.bg-light { background: #f2f4f8; padding: 14px; border-radius: 6px; }
+
+/* ── SHARED CARD SHELL ── */
+.card {
+  width: 112px; height: 112px;
+  border-radius: 2px; border: 2px solid;
+  display: flex; flex-direction: column; overflow: hidden;
+  font-family: 'Arial Narrow', Arial; position: relative;
+}
+.hcard {
+  width: 92px; height: 126px;
+  border-radius: 2px; border: 2px solid;
+  display: flex; flex-direction: column; overflow: hidden;
+  font-family: 'Arial Narrow', Arial;
+}
+
+/* Dark theme (A) */
+.dark.p1 { border-color: #5599ff; background: #0a1428; color: #fff; }
+.dark.p2 { border-color: #ff5555; background: #280a0a; color: #fff; }
+/* Light theme (E) */
+.light.p1 { border-color: #2266cc; background: #e8f0ff; color: #111; }
+.light.p2 { border-color: #cc2233; background: #ffe8e8; color: #111; }
+
+/* ── OPTION 1: Current (3×3 grid) BEFORE fix ── */
+.o1 .name { font-size: 8px; font-weight: bold; padding: 2px 4px; background: rgba(0,0,0,0.25); white-space: nowrap; overflow: hidden; letter-spacing: 0.5px; }
+.light.o1 .name { background: rgba(0,0,0,0.07); }
+.o1 .dirs { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; flex: 1; font-size: 13px; font-weight: bold; text-align: center; }
+.o1 .dirs > div { display: flex; align-items: center; justify-content: center; }
+.o1 .cls-tiny { font-size: 7px; color: #555; }
+.o1 .kw-tiny { padding: 0 3px; font-size: 7px; color: #a09070; background: rgba(0,0,0,0.4); }
+
+/* ── OPTION 2: Current AFTER fix (bigger cls + keyword) ── */
+.o2 .name { font-size: 8px; font-weight: bold; padding: 2px 4px; background: rgba(0,0,0,0.25); white-space: nowrap; overflow: hidden; letter-spacing: 0.5px; }
+.light.o2 .name { background: rgba(0,0,0,0.07); }
+.o2 .dirs { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; flex: 1; font-size: 13px; font-weight: bold; text-align: center; }
+.o2 .dirs > div { display: flex; align-items: center; justify-content: center; }
+.o2 .cls-big { font-size: 9px; font-weight: bold; opacity: 0.55; letter-spacing: 0.5px; }
+.o2 .kw-big { padding: 1px 3px; font-size: 9px; font-weight: bold; color: #c49a28; background: rgba(0,0,0,0.35); }
+.light.o2 .kw-big { background: rgba(0,0,0,0.08); }
+
+/* ── OPTION 3: Crosshair — numbers even bigger, cls+kw as bottom strip ── */
+.o3 .name { font-size: 8px; font-weight: bold; padding: 2px 4px; background: rgba(0,0,0,0.25); white-space: nowrap; overflow: hidden; letter-spacing: 0.5px; }
+.light.o3 .name { background: rgba(0,0,0,0.07); }
+.o3 .body { flex: 1; position: relative; }
+.o3 .vn { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); font-size: 20px; font-weight: bold; }
+.o3 .vs { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); font-size: 20px; font-weight: bold; }
+.o3 .ve { position: absolute; right: 6px; top: 50%; transform: translateY(-70%); font-size: 20px; font-weight: bold; }
+.o3 .vw { position: absolute; left: 6px; top: 50%; transform: translateY(-70%); font-size: 20px; font-weight: bold; }
+.o3 .bot { position: absolute; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; background: rgba(0,0,0,0.3); }
+.light.o3 .bot { background: rgba(0,0,0,0.08); }
+.o3 .cls-bot { font-size: 9px; font-weight: bold; opacity: 0.6; letter-spacing: 0.5px; }
+.o3 .kw-bot { font-size: 9px; font-weight: bold; color: #c49a28; }
+
+/* ── OPTION 4: Compact rows — name, cls/cost row, N/S/E/W as 2×2, keyword ── */
+.o4 .name { font-size: 8px; font-weight: bold; padding: 2px 4px; background: rgba(0,0,0,0.25); white-space: nowrap; overflow: hidden; letter-spacing: 0.5px; }
+.light.o4 .name { background: rgba(0,0,0,0.07); }
+.o4 .clsrow { display: flex; justify-content: space-between; align-items: center; padding: 2px 5px; }
+.o4 .cls-label { font-size: 9px; font-weight: bold; opacity: 0.6; letter-spacing: 1px; }
+.o4 .cost-label { font-size: 9px; font-weight: bold; color: #c49a28; }
+.o4 .grid2 { display: grid; grid-template-columns: 1fr 1fr; flex: 1; }
+.o4 .cell { display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.06); }
+.light.o4 .cell { border-color: rgba(0,0,0,0.06); }
+.o4 .dir-lbl { font-size: 7px; opacity: 0.45; letter-spacing: 1px; }
+.o4 .dir-val { font-size: 20px; font-weight: bold; line-height: 1; }
+.o4 .kw-row { padding: 2px 4px; font-size: 9px; font-weight: bold; color: #c49a28; background: rgba(0,0,0,0.3); text-align: center; }
+.light.o4 .kw-row { background: rgba(0,0,0,0.07); }
+
+/* ── HAND CARDS ── */
+.hcard .hdr { font-size: 7.5px; font-weight: bold; padding: 2px 4px; background: rgba(0,0,0,0.25); white-space: nowrap; overflow: hidden; }
+.dark .hdr { color: #fff; }
+.light .hdr { color: #111; background: rgba(0,0,0,0.07); }
+.hcard .cost { font-size: 13px; font-weight: bold; color: #f0c030; padding: 1px 4px; }
+.light .hcard .cost { color: #bb8800; }
+.hcard .type-old { font-size: 6.5px; color: #8a7a60; padding: 0 4px; }
+.hcard .type-new { font-size: 9px; font-weight: bold; color: #8a7a60; padding: 0 4px; }
+.light .hcard .type-new { color: #6a5a40; }
+.hcard .dirs { display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; flex: 1; font-size: 11px; font-weight: bold; text-align: center; }
+.dark .hcard .dirs { color: #fff; }
+.light .hcard .dirs { color: #111; }
+.hcard .dirs > div { display: flex; align-items: center; justify-content: center; }
+.hcard .kw-old { font-size: 6px; color: #a09070; padding: 0 4px; }
+.hcard .kw-new { font-size: 9px; font-weight: bold; color: #c49a28; padding: 0 4px; }
+.light .hcard .kw-new { color: #bb8800; }
+
+.state-sup { position: absolute; bottom: 1px; right: 2px; font-size: 7px; color: #c49a28; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<div>
+<h2>OPTION 1 — BEFORE (current live, for reference)</h2>
+<div class="desc">Class: single letter "T" at 7px invisible gray. Keyword: 7px muted. Hard to read.</div>
+<div class="row">
+
+  <div class="col">
+    <div class="lbl">BOARD · P1 · DARK</div>
+    <div class="bg-dark">
+      <div class="card dark p1 o1">
+        <div class="name">Sherman Tank</div>
+        <div class="dirs">
+          <div></div><div>7</div><div></div>
+          <div>1</div><div class="cls-tiny">T</div><div>6</div>
+          <div></div><div>4</div><div></div>
+        </div>
+        <div class="kw-tiny">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">BOARD · P2 · DARK</div>
+    <div class="bg-dark">
+      <div class="card dark p2 o1">
+        <div class="name">Panzer II</div>
+        <div class="dirs">
+          <div></div><div>5</div><div></div>
+          <div>2</div><div class="cls-tiny">T</div><div>2</div>
+          <div></div><div>5</div><div></div>
+        </div>
+        <div class="kw-tiny"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">BOARD · P1 · LIGHT</div>
+    <div class="bg-light">
+      <div class="card light p1 o1">
+        <div class="name">Sherman Tank</div>
+        <div class="dirs">
+          <div></div><div>7</div><div></div>
+          <div>1</div><div class="cls-tiny">T</div><div>6</div>
+          <div></div><div>4</div><div></div>
+        </div>
+        <div class="kw-tiny">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">HAND · P1 · DARK</div>
+    <div class="bg-dark">
+      <div class="hcard dark p1">
+        <div class="hdr">Sherman Tank</div>
+        <div class="cost">3</div>
+        <div class="type-old">TANK</div>
+        <div class="dirs">
+          <div></div><div>7</div><div></div>
+          <div>1</div><div style="font-size:5px;opacity:.3">·</div><div>6</div>
+          <div></div><div>4</div><div></div>
+        </div>
+        <div class="kw-old">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">HAND · P1 · LIGHT</div>
+    <div class="bg-light">
+      <div class="hcard light p1">
+        <div class="hdr">Sherman Tank</div>
+        <div class="cost">3</div>
+        <div class="type-old">TANK</div>
+        <div class="dirs">
+          <div></div><div>7</div><div></div>
+          <div>1</div><div style="font-size:5px;opacity:.3">·</div><div>6</div>
+          <div></div><div>4</div><div></div>
+        </div>
+        <div class="kw-old">Armor</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<div>
+<h2>OPTION 2 — AFTER FIX (now live) — same layout, bigger cls + keyword</h2>
+<div class="desc">Class: "TNK" at 9px bold. Keyword: 9px bold gold. Same grid layout, just actually readable.</div>
+<div class="row">
+
+  <div class="col">
+    <div class="lbl">BOARD · P1 · DARK</div>
+    <div class="bg-dark">
+      <div class="card dark p1 o2">
+        <div class="name">Sherman Tank</div>
+        <div class="dirs">
+          <div></div><div>7</div><div></div>
+          <div>1</div><div class="cls-big">TNK</div><div>6</div>
+          <div></div><div>4</div><div></div>
+        </div>
+        <div class="kw-big">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">BOARD · P2 · DARK</div>
+    <div class="bg-dark">
+      <div class="card dark p2 o2">
+        <div class="name">Panzer II</div>
+        <div class="dirs">
+          <div></div><div>5</div><div></div>
+          <div>2</div><div class="cls-big">TNK</div><div>2</div>
+          <div></div><div>5</div><div></div>
+        </div>
+        <div class="kw-big" style="visibility:hidden">x</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">BOARD · P1 · LIGHT</div>
+    <div class="bg-light">
+      <div class="card light p1 o2">
+        <div class="name">Sherman Tank</div>
+        <div class="dirs">
+          <div></div><div>7</div><div></div>
+          <div>1</div><div class="cls-big">TNK</div><div>6</div>
+          <div></div><div>4</div><div></div>
+        </div>
+        <div class="kw-big">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">HAND · P1 · DARK</div>
+    <div class="bg-dark">
+      <div class="hcard dark p1">
+        <div class="hdr">Sherman Tank</div>
+        <div class="cost">3</div>
+        <div class="type-new">TANK</div>
+        <div class="dirs">
+          <div></div><div>7</div><div></div>
+          <div>1</div><div style="font-size:5px;opacity:.3">·</div><div>6</div>
+          <div></div><div>4</div><div></div>
+        </div>
+        <div class="kw-new">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">HAND · P1 · LIGHT</div>
+    <div class="bg-light">
+      <div class="hcard light p1">
+        <div class="hdr">Sherman Tank</div>
+        <div class="cost">3</div>
+        <div class="type-new">TANK</div>
+        <div class="dirs">
+          <div></div><div>7</div><div></div>
+          <div>1</div><div style="font-size:5px;opacity:.3">·</div><div>6</div>
+          <div></div><div>4</div><div></div>
+        </div>
+        <div class="kw-new">Armor</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<div>
+<h2>OPTION 3 — CROSSHAIR (bigger numbers, cls+kw as bottom strip)</h2>
+<div class="desc">Numbers jump to 20px — more instant read. Class and keyword share a bottom bar. Requires JS change.</div>
+<div class="row">
+
+  <div class="col">
+    <div class="lbl">BOARD · P1 · DARK</div>
+    <div class="bg-dark">
+      <div class="card dark p1 o3">
+        <div class="name">Sherman Tank</div>
+        <div class="body">
+          <div class="vn">7</div>
+          <div class="ve">6</div>
+          <div class="vs">4</div>
+          <div class="vw">1</div>
+          <div class="bot">
+            <span class="cls-bot">TNK</span>
+            <span class="kw-bot">Armor</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">BOARD · P2 · DARK</div>
+    <div class="bg-dark">
+      <div class="card dark p2 o3">
+        <div class="name">Panzer II</div>
+        <div class="body">
+          <div class="vn">5</div>
+          <div class="ve">2</div>
+          <div class="vs">5</div>
+          <div class="vw">2</div>
+          <div class="bot" style="position:absolute;bottom:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:2px 4px;background:rgba(0,0,0,0.3)">
+            <span class="cls-bot">TNK</span>
+            <span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">BOARD · P1 · LIGHT</div>
+    <div class="bg-light">
+      <div class="card light p1 o3">
+        <div class="name">Sherman Tank</div>
+        <div class="body">
+          <div class="vn">7</div>
+          <div class="ve">6</div>
+          <div class="vs">4</div>
+          <div class="vw">1</div>
+          <div class="bot">
+            <span class="cls-bot">TNK</span>
+            <span class="kw-bot">Armor</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">HAND · P1 · DARK</div>
+    <div class="bg-dark">
+      <div class="hcard dark p1 o3" style="position:relative">
+        <div class="hdr">Sherman Tank</div>
+        <div class="cost">3</div>
+        <div class="type-new">TANK</div>
+        <div style="flex:1;position:relative">
+          <div class="vn" style="position:absolute;top:4px;left:50%;transform:translateX(-50%);font-size:18px;font-weight:bold">7</div>
+          <div class="ve" style="position:absolute;right:5px;top:50%;transform:translateY(-70%);font-size:18px;font-weight:bold">6</div>
+          <div class="vs" style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);font-size:18px;font-weight:bold">4</div>
+          <div class="vw" style="position:absolute;left:5px;top:50%;transform:translateY(-70%);font-size:18px;font-weight:bold">1</div>
+          <div style="position:absolute;bottom:0;left:0;right:0;font-size:9px;font-weight:bold;color:#c49a28;text-align:center;padding:2px;background:rgba(0,0,0,0.3)">Armor</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">HAND · P1 · LIGHT</div>
+    <div class="bg-light">
+      <div class="hcard light p1 o3" style="position:relative">
+        <div class="hdr">Sherman Tank</div>
+        <div class="cost">3</div>
+        <div class="type-new">TANK</div>
+        <div style="flex:1;position:relative">
+          <div style="position:absolute;top:4px;left:50%;transform:translateX(-50%);font-size:18px;font-weight:bold">7</div>
+          <div style="position:absolute;right:5px;top:50%;transform:translateY(-70%);font-size:18px;font-weight:bold">6</div>
+          <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);font-size:18px;font-weight:bold">4</div>
+          <div style="position:absolute;left:5px;top:50%;transform:translateY(-70%);font-size:18px;font-weight:bold">1</div>
+          <div style="position:absolute;bottom:0;left:0;right:0;font-size:9px;font-weight:bold;color:#bb8800;text-align:center;padding:2px;background:rgba(0,0,0,0.07)">Armor</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<div>
+<h2>OPTION 4 — 2×2 QUADRANT (N/E/S/W each in own cell with label)</h2>
+<div class="desc">Each direction gets its own labeled cell. Most scannable but most different from current. Requires JS change.</div>
+<div class="row">
+
+  <div class="col">
+    <div class="lbl">BOARD · P1 · DARK</div>
+    <div class="bg-dark">
+      <div class="card dark p1 o4">
+        <div class="name">Sherman Tank</div>
+        <div class="clsrow">
+          <span class="cls-label">TNK</span>
+          <span class="cost-label">3⛽</span>
+        </div>
+        <div class="grid2">
+          <div class="cell"><div class="dir-lbl">N</div><div class="dir-val">7</div></div>
+          <div class="cell"><div class="dir-lbl">E</div><div class="dir-val">6</div></div>
+          <div class="cell"><div class="dir-lbl">S</div><div class="dir-val">4</div></div>
+          <div class="cell"><div class="dir-lbl">W</div><div class="dir-val">1</div></div>
+        </div>
+        <div class="kw-row">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">BOARD · P2 · DARK</div>
+    <div class="bg-dark">
+      <div class="card dark p2 o4">
+        <div class="name">Panzer II</div>
+        <div class="clsrow">
+          <span class="cls-label">TNK</span>
+          <span class="cost-label">1⛽</span>
+        </div>
+        <div class="grid2">
+          <div class="cell"><div class="dir-lbl">N</div><div class="dir-val">5</div></div>
+          <div class="cell"><div class="dir-lbl">E</div><div class="dir-val">2</div></div>
+          <div class="cell"><div class="dir-lbl">S</div><div class="dir-val">5</div></div>
+          <div class="cell"><div class="dir-lbl">W</div><div class="dir-val">2</div></div>
+        </div>
+        <div class="kw-row" style="visibility:hidden">x</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">BOARD · P1 · LIGHT</div>
+    <div class="bg-light">
+      <div class="card light p1 o4">
+        <div class="name">Sherman Tank</div>
+        <div class="clsrow">
+          <span class="cls-label">TNK</span>
+          <span class="cost-label" style="color:#bb8800">3⛽</span>
+        </div>
+        <div class="grid2">
+          <div class="cell"><div class="dir-lbl">N</div><div class="dir-val">7</div></div>
+          <div class="cell"><div class="dir-lbl">E</div><div class="dir-val">6</div></div>
+          <div class="cell"><div class="dir-lbl">S</div><div class="dir-val">4</div></div>
+          <div class="cell"><div class="dir-lbl">W</div><div class="dir-val">1</div></div>
+        </div>
+        <div class="kw-row" style="background:rgba(0,0,0,0.07);color:#bb8800">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">HAND · P1 · DARK</div>
+    <div class="bg-dark">
+      <div class="hcard dark p1 o4">
+        <div class="hdr">Sherman Tank</div>
+        <div class="clsrow" style="padding:2px 4px">
+          <span class="cls-label">TNK</span>
+          <span class="cost-label">3⛽</span>
+        </div>
+        <div class="grid2" style="flex:1">
+          <div class="cell"><div class="dir-lbl">N</div><div class="dir-val">7</div></div>
+          <div class="cell"><div class="dir-lbl">E</div><div class="dir-val">6</div></div>
+          <div class="cell"><div class="dir-lbl">S</div><div class="dir-val">4</div></div>
+          <div class="cell"><div class="dir-lbl">W</div><div class="dir-val">1</div></div>
+        </div>
+        <div class="kw-row">Armor</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="lbl">HAND · P1 · LIGHT</div>
+    <div class="bg-light">
+      <div class="hcard light p1 o4">
+        <div class="hdr">Sherman Tank</div>
+        <div class="clsrow" style="padding:2px 4px">
+          <span class="cls-label">TNK</span>
+          <span class="cost-label" style="color:#bb8800">3⛽</span>
+        </div>
+        <div class="grid2" style="flex:1">
+          <div class="cell"><div class="dir-lbl">N</div><div class="dir-val">7</div></div>
+          <div class="cell"><div class="dir-lbl">E</div><div class="dir-val">6</div></div>
+          <div class="cell"><div class="dir-lbl">S</div><div class="dir-val">4</div></div>
+          <div class="cell"><div class="dir-lbl">W</div><div class="dir-val">1</div></div>
+        </div>
+        <div class="kw-row" style="background:rgba(0,0,0,0.07);color:#bb8800">Armor</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<div>
+<h2>COMMANDS & MISSIONS — CURRENT DESIGN (hand cards only)</h2>
+<div class="desc">Commands and missions have no directional values — just name, cost, type, and effect text. Showing current live design in both themes.</div>
+<div class="row">
+
+  <!-- COMMAND dark -->
+  <div class="col">
+    <div class="lbl">COMMAND · DARK</div>
+    <div class="bg-dark" style="display:flex;gap:10px">
+
+      <div class="hcard dark" style="border-color:#8888cc;background:#10101e">
+        <div class="hdr" style="color:#fff;background:rgba(0,0,0,0.3)">Field Medic</div>
+        <div class="cost" style="color:#f0c030">1 ⛽</div>
+        <div class="type-new" style="color:#8888cc">COMMAND</div>
+        <div class="hc-eff" style="font-size:7px;padding:4px;color:#ccc;line-height:1.5;flex:1">Remove Suppression from 1 friendly unit.</div>
+      </div>
+
+      <div class="hcard dark" style="border-color:#8888cc;background:#10101e">
+        <div class="hdr" style="color:#fff;background:rgba(0,0,0,0.3)">Artillery Barrage</div>
+        <div class="cost" style="color:#f0c030">2 ⛽</div>
+        <div class="type-new" style="color:#8888cc">COMMAND</div>
+        <div class="hc-eff" style="font-size:7px;padding:4px;color:#ccc;line-height:1.5;flex:1">Remove Armor from 1 enemy unit and Suppress it.</div>
+      </div>
+
+      <div class="hcard dark" style="border-color:#8888cc;background:#10101e">
+        <div class="hdr" style="color:#fff;background:rgba(0,0,0,0.3)">Dig In</div>
+        <div class="cost" style="color:#f0c030">1 ⛽</div>
+        <div class="type-new" style="color:#8888cc">COMMAND</div>
+        <div class="hc-eff" style="font-size:7px;padding:4px;color:#ccc;line-height:1.5;flex:1">Choose 1 friendly unit adjacent to an objective you control. It gains Guard and Armor until your next turn.</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- COMMAND light -->
+  <div class="col">
+    <div class="lbl">COMMAND · LIGHT</div>
+    <div class="bg-light" style="display:flex;gap:10px">
+
+      <div class="hcard light" style="border-color:#4455bb;background:#eeeeff">
+        <div class="hdr" style="color:#111;background:rgba(0,0,0,0.07)">Field Medic</div>
+        <div class="cost" style="color:#bb8800">1 ⛽</div>
+        <div class="type-new" style="color:#4455bb">COMMAND</div>
+        <div class="hc-eff" style="font-size:7px;padding:4px;color:#333;line-height:1.5;flex:1">Remove Suppression from 1 friendly unit.</div>
+      </div>
+
+      <div class="hcard light" style="border-color:#4455bb;background:#eeeeff">
+        <div class="hdr" style="color:#111;background:rgba(0,0,0,0.07)">Artillery Barrage</div>
+        <div class="cost" style="color:#bb8800">2 ⛽</div>
+        <div class="type-new" style="color:#4455bb">COMMAND</div>
+        <div class="hc-eff" style="font-size:7px;padding:4px;color:#333;line-height:1.5;flex:1">Remove Armor from 1 enemy unit and Suppress it.</div>
+      </div>
+
+      <div class="hcard light" style="border-color:#4455bb;background:#eeeeff">
+        <div class="hdr" style="color:#111;background:rgba(0,0,0,0.07)">Dig In</div>
+        <div class="cost" style="color:#bb8800">1 ⛽</div>
+        <div class="type-new" style="color:#4455bb">COMMAND</div>
+        <div class="hc-eff" style="font-size:7px;padding:4px;color:#333;line-height:1.5;flex:1">Choose 1 friendly unit adjacent to an objective you control. It gains Guard and Armor until your next turn.</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- MISSIONS -->
+<div style="margin-top:32px">
+<div class="desc" style="margin-bottom:16px">Missions: condition on top, reward in a distinct gold-tinted bottom strip.</div>
+<div class="row">
+
+  <!-- MISSION dark -->
+  <div class="col">
+    <div class="lbl">MISSION · DARK</div>
+    <div class="bg-dark" style="display:flex;gap:10px">
+
+      <div class="hcard dark" style="border-color:#c49a28;background:#140e00;display:flex;flex-direction:column">
+        <div class="hdr" style="color:#fff;background:rgba(0,0,0,0.35)">Blitz Assault</div>
+        <div style="display:flex;align-items:baseline;gap:4px;padding:2px 4px">
+          <span style="font-size:12px;font-weight:bold;color:#f0c030;font-family:'Arial Narrow',Arial">0⛽</span>
+          <span style="font-size:8px;font-weight:bold;color:#c49a28;letter-spacing:1px;font-family:'Arial Narrow',Arial">MISSION</span>
+        </div>
+        <div style="flex:1;padding:4px;font-size:7px;color:#ccc;line-height:1.5">Destroy 2 enemy units in a single turn.</div>
+        <div style="padding:4px;background:rgba(196,154,40,0.18);border-top:1px solid rgba(196,154,40,0.4)">
+          <div style="font-size:6px;font-weight:bold;color:#c49a28;letter-spacing:1px;font-family:'Arial Narrow',Arial;margin-bottom:2px">REWARD</div>
+          <div style="font-size:7px;color:#f0e0a0;line-height:1.4">Draw 2 cards + gain 1 Fuel.</div>
+        </div>
+      </div>
+
+      <div class="hcard dark" style="border-color:#c49a28;background:#140e00;display:flex;flex-direction:column">
+        <div class="hdr" style="color:#fff;background:rgba(0,0,0,0.35)">Hold the Line</div>
+        <div style="display:flex;align-items:baseline;gap:4px;padding:2px 4px">
+          <span style="font-size:12px;font-weight:bold;color:#f0c030;font-family:'Arial Narrow',Arial">0⛽</span>
+          <span style="font-size:8px;font-weight:bold;color:#c49a28;letter-spacing:1px;font-family:'Arial Narrow',Arial">MISSION</span>
+        </div>
+        <div style="flex:1;padding:4px;font-size:7px;color:#ccc;line-height:1.5">Control all objectives at end of your turn.</div>
+        <div style="padding:4px;background:rgba(196,154,40,0.18);border-top:1px solid rgba(196,154,40,0.4)">
+          <div style="font-size:6px;font-weight:bold;color:#c49a28;letter-spacing:1px;font-family:'Arial Narrow',Arial;margin-bottom:2px">REWARD</div>
+          <div style="font-size:7px;color:#f0e0a0;line-height:1.4">Heal 5 HQ HP.</div>
+        </div>
+      </div>
+
+      <div class="hcard dark" style="border-color:#c49a28;background:#140e00;display:flex;flex-direction:column">
+        <div class="hdr" style="color:#fff;background:rgba(0,0,0,0.35)">Deep Strike</div>
+        <div style="display:flex;align-items:baseline;gap:4px;padding:2px 4px">
+          <span style="font-size:12px;font-weight:bold;color:#f0c030;font-family:'Arial Narrow',Arial">1⛽</span>
+          <span style="font-size:8px;font-weight:bold;color:#c49a28;letter-spacing:1px;font-family:'Arial Narrow',Arial">MISSION</span>
+        </div>
+        <div style="flex:1;padding:4px;font-size:7px;color:#ccc;line-height:1.5">Friendly unit adjacent to 2+ enemy units at once.</div>
+        <div style="padding:4px;background:rgba(196,154,40,0.18);border-top:1px solid rgba(196,154,40,0.4)">
+          <div style="font-size:6px;font-weight:bold;color:#c49a28;letter-spacing:1px;font-family:'Arial Narrow',Arial;margin-bottom:2px">REWARD</div>
+          <div style="font-size:7px;color:#f0e0a0;line-height:1.4">Deal 2 HQ damage.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MISSION light -->
+  <div class="col">
+    <div class="lbl">MISSION · LIGHT</div>
+    <div class="bg-light" style="display:flex;gap:10px">
+
+      <div class="hcard light" style="border-color:#aa7700;background:#fffae8;display:flex;flex-direction:column">
+        <div class="hdr" style="color:#111;background:rgba(0,0,0,0.07)">Blitz Assault</div>
+        <div style="display:flex;align-items:baseline;gap:4px;padding:2px 4px">
+          <span style="font-size:12px;font-weight:bold;color:#aa7700;font-family:'Arial Narrow',Arial">0⛽</span>
+          <span style="font-size:8px;font-weight:bold;color:#aa7700;letter-spacing:1px;font-family:'Arial Narrow',Arial">MISSION</span>
+        </div>
+        <div style="flex:1;padding:4px;font-size:7px;color:#444;line-height:1.5">Destroy 2 enemy units in a single turn.</div>
+        <div style="padding:4px;background:rgba(170,119,0,0.12);border-top:1px solid rgba(170,119,0,0.35)">
+          <div style="font-size:6px;font-weight:bold;color:#aa7700;letter-spacing:1px;font-family:'Arial Narrow',Arial;margin-bottom:2px">REWARD</div>
+          <div style="font-size:7px;color:#7a5500;line-height:1.4">Draw 2 cards + gain 1 Fuel.</div>
+        </div>
+      </div>
+
+      <div class="hcard light" style="border-color:#aa7700;background:#fffae8;display:flex;flex-direction:column">
+        <div class="hdr" style="color:#111;background:rgba(0,0,0,0.07)">Hold the Line</div>
+        <div style="display:flex;align-items:baseline;gap:4px;padding:2px 4px">
+          <span style="font-size:12px;font-weight:bold;color:#aa7700;font-family:'Arial Narrow',Arial">0⛽</span>
+          <span style="font-size:8px;font-weight:bold;color:#aa7700;letter-spacing:1px;font-family:'Arial Narrow',Arial">MISSION</span>
+        </div>
+        <div style="flex:1;padding:4px;font-size:7px;color:#444;line-height:1.5">Control all objectives at end of your turn.</div>
+        <div style="padding:4px;background:rgba(170,119,0,0.12);border-top:1px solid rgba(170,119,0,0.35)">
+          <div style="font-size:6px;font-weight:bold;color:#aa7700;letter-spacing:1px;font-family:'Arial Narrow',Arial;margin-bottom:2px">REWARD</div>
+          <div style="font-size:7px;color:#7a5500;line-height:1.4">Heal 5 HQ HP.</div>
+        </div>
+      </div>
+
+      <div class="hcard light" style="border-color:#aa7700;background:#fffae8;display:flex;flex-direction:column">
+        <div class="hdr" style="color:#111;background:rgba(0,0,0,0.07)">Deep Strike</div>
+        <div style="display:flex;align-items:baseline;gap:4px;padding:2px 4px">
+          <span style="font-size:12px;font-weight:bold;color:#aa7700;font-family:'Arial Narrow',Arial">1⛽</span>
+          <span style="font-size:8px;font-weight:bold;color:#aa7700;letter-spacing:1px;font-family:'Arial Narrow',Arial">MISSION</span>
+        </div>
+        <div style="flex:1;padding:4px;font-size:7px;color:#444;line-height:1.5">Friendly unit adjacent to 2+ enemy units at once.</div>
+        <div style="padding:4px;background:rgba(170,119,0,0.12);border-top:1px solid rgba(170,119,0,0.35)">
+          <div style="font-size:6px;font-weight:bold;color:#aa7700;letter-spacing:1px;font-family:'Arial Narrow',Arial;margin-bottom:2px">REWARD</div>
+          <div style="font-size:7px;color:#7a5500;line-height:1.4">Deal 2 HQ damage.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</div>
+</div>
+
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { CARD_BY_ID } from './cards.js?v=1783341581';
+import { CARD_BY_ID } from './cards.js?v=1783419937';
 import {
   createInitialState,
   startOfTurn,
@@ -13,11 +13,11 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783341581';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783341581';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783341581';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783341581';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783341581';
+} from './state.js?v=1783419937';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783419937';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783419937';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783419937';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783419937';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -27,6 +27,8 @@ const DECKS = {
   control: { ids: [65,65, 6,6, 36,36, 11,11, 39,39, 63,63, 2,2, 75,75, 74,74, 49,49, 54,54, 16,16, 57,57] },
   // Counter-aggro: Guard wall neutralizes DA, Armor soaks Bombard, full draw engine, Overrun finisher — 40 AP
   counter: { ids: [2,2, 11,11, 36,36, 43,43, 6,6, 69,69, 5,5, 1,1, 34,34, 22,22, 19,19, 73,73, 51,51, 25,25, 81,81] },
+  // Steel Column: Armor/Heavy Armor tank wall, Fuel ramp into King Tiger/Heavy Tank, Hold the Line stabilizes — 50 AP
+  power:   { ids: [63,63, 66,66, 65,65, 39,39, 6,6, 9,9, 5,5, 55,55, 25,25, 23,23, 76,76, 18,18] },
 };
 
 // Bridge (29), Radar Station (30), Fortification (33) excluded — effects not automated yet.
@@ -136,6 +138,7 @@ let pendingAttackerKey = null;
 let attackedThisTurn = new Map(); // tileKey → attack count used this turn
 let pendingCommandId = null;       // card ID of command awaiting a board target
 let preCommandState = null;        // state snapshot before command-targeting started (for cancel)
+let pendingRallyCryCount = 0;      // remaining Rally Cry target picks (0 = not active)
 let lastChangedKeys = new Set();   // tiles changed by opponent's last move (cleared on own action)
 let gameOver = false;
 
@@ -367,6 +370,12 @@ function redraw() {
   const handRole = myRole ?? state.initiative;
   renderHand(state[handRole].hand, 'p1-hand', selectedHandCardId, { tankDiscount: state[handRole].tempFuelDiscount ?? 0 });
   renderMissionsPanel(state);
+
+  const cancelBtn = document.getElementById('btn-cancel');
+  if (cancelBtn) {
+    const rallyCryAlreadyPicked = pendingCommandId === 51 && pendingRallyCryCount < 2;
+    cancelBtn.textContent = rallyCryAlreadyPicked ? 'Done' : 'Cancel';
+  }
 
   const endTurnBtn = document.getElementById('btn-end-turn');
   if (isOnline) {
@@ -897,18 +906,6 @@ function playInstantCommand(cardId) {
       log.push(`${card.name}: ${cleared} unit(s) un-suppressed, +${hpGain} HQ HP`);
       break;
     }
-    case 51: { // Rally Cry — up to 2 friendly units +1 all sides (prototype: buffs all)
-      const newBoard = { ...s.board };
-      let count = 0;
-      for (const [k, u] of Object.entries(newBoard)) {
-        if (!u || u.owner !== active || u.state === 'destroyed') continue;
-        newBoard[k] = { ...u, tempSideBonus: (u.tempSideBonus || 0) + 1 };
-        count++;
-      }
-      s = { ...s, board: newBoard };
-      log.push(`${card.name}: ${count} unit(s) +1 all sides [prototype: buffs all, not choose-2]`);
-      break;
-    }
     case 73: { // Overrun — each Suppress/Destroy this turn deals +1 HQ damage
       s = { ...s, [active]: { ...s[active], overrun: true } };
       log.push(`${card.name}: Suppress/Destroy deals +1 HQ damage this turn`);
@@ -980,6 +977,7 @@ function getCommandTargets(commandId) {
 
     case 19: // Tactical Withdrawal — any friendly unit
     case 49: // Smoke Screen — any friendly → gains Guard
+    case 51: // Rally Cry — any friendly (up to 2, chained)
       return new Set(friendlies.map(([k]) => k));
 
     case 50: // Improvised Position — friendly unit with no base keyword
@@ -1005,6 +1003,7 @@ function startCommandTargeting(cardId) {
   preCommandState = state;
   state = { ...state, [active]: { ...state[active], fuel: state[active].fuel - card.cost, hand: handAfter } };
   pendingCommandId = cardId;
+  pendingRallyCryCount = cardId === 51 ? 2 : 0;
   uiState = 'command-targeting';
   appendLog([`${card.name}: choose a target`]);
   redraw();
@@ -1079,6 +1078,18 @@ function applyCommandEffect(commandId, targetKey) {
       log.push(`${card.name}: ${unitName} gains Guard (until your next turn)`);
       break;
     }
+    case 51: { // Rally Cry — +1 all sides for 2 turns (choose up to 2, may stop after 1)
+      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, grantedSideBonus: (unit.grantedSideBonus || 0) + 1, sideBonusTurns: 2 } } };
+      log.push(`${card.name}: ${unitName} +1 all sides (2 turns)`);
+      pendingRallyCryCount--;
+      if (pendingRallyCryCount > 0) {
+        commitState(s, log);
+        appendLog([`Rally Cry: choose a second unit (or press Done)`]);
+        redraw();
+        return; // stay in command-targeting for second pick
+      }
+      break;
+    }
     case 50: { // Improvised Position — give Armor until owner's next turn
       s = { ...s, board: { ...s.board, [targetKey]: { ...unit, grantedKeywords: [...(unit.grantedKeywords || []), 'Armor'] } } };
       log.push(`${card.name}: ${unitName} gains Armor (until your next turn)`);
@@ -1133,7 +1144,11 @@ function playMissionCard(cardId) {
     s = { ...s, [active]: { ...s[active], tempFuelDiscount: (s[active].tempFuelDiscount ?? 0) + 2 } };
     log.push(`${card.name}: played — next Tank costs 2 less Fuel`);
   } else {
-    const newMission = { cardId, turnsRemaining: card.limitTurns || 5 };
+    const newMission = {
+      cardId,
+      turnsRemaining: card.limitTurns || 5,
+      ...(cardId === 81 ? { killsAtDeploy: s[active].totalKills ?? 0 } : {}),
+    };
     s = { ...s, [active]: { ...s[active], missions: [...s[active].missions, newMission] } };
     log.push(`${card.name}: mission active (${newMission.turnsRemaining} turns)`);
     const { state: afterCheck, log: checkLog } = checkActiveMissions(s, active, {});
@@ -1152,7 +1167,7 @@ function checkActiveMissions(s, player, ctx) {
   const remaining = [];
 
   for (const m of missions) {
-    const { met, targetKey } = evalMissionCondition(s, player, m.cardId, ctx);
+    const { met, targetKey } = evalMissionCondition(s, player, m, ctx);
     if (met) {
       const r = applyMissionReward(s, player, m.cardId, targetKey);
       s = r.state;
@@ -1165,7 +1180,10 @@ function checkActiveMissions(s, player, ctx) {
   return { state: s, log };
 }
 
-function evalMissionCondition(s, player, cardId, ctx) {
+// mission — the specific ActiveMission instance being checked (not just its cardId), so
+// per-copy progress (e.g. Total Onslaught's killsAtDeploy) isn't confused with a second copy's.
+function evalMissionCondition(s, player, mission, ctx) {
+  const cardId = mission.cardId;
   const opp = player === 'p1' ? 'p2' : 'p1';
   const objs = Object.values(s.objectives ?? {});
   const boardVals = Object.entries(s.board);
@@ -1199,8 +1217,8 @@ function evalMissionCondition(s, player, cardId, ctx) {
       }
       return { met: false };
     }
-    case 81: // Total Onslaught: 3+ total kills
-      return { met: (s[player].totalKills ?? 0) >= 3 };
+    case 81: // Total Onslaught: 3+ kills since this copy was deployed
+      return { met: (s[player].totalKills ?? 0) - (mission.killsAtDeploy ?? 0) >= 3 };
     case 84: // Overwhelming Force: kill with Heavy Armor
       return { met: !!ctx.heavyArmorKill };
     default: return { met: false };
@@ -1213,8 +1231,8 @@ function applyMissionReward(s, player, cardId, targetKey) {
   const nm = CARD_BY_ID[cardId]?.name ?? '?';
 
   switch (cardId) {
-    case 23: // Hold the Line: +5 HQ (capped at 20)
-      s = { ...s, [player]: { ...s[player], hq: Math.min(s[player].hq + 5, 20) } };
+    case 23: // Hold the Line: +5 HQ (capped at 25)
+      s = { ...s, [player]: { ...s[player], hq: Math.min(s[player].hq + 5, 25) } };
       log.push(`${nm}: COMPLETE — +5 HQ HP`);
       break;
     case 24: // Deep Strike: 2 HQ damage
@@ -1292,7 +1310,7 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   newState = updateObjectiveLevels(newState);            // escalate objective levels
   newState = checkObjectiveControl(newState);            // check majority-adjacent control
 
-  // Supply Runner ability: at start of turn, if adjacent to a controlled objective → +1 Fuel
+  // Supply Runner ability: at start of turn, if on a controlled objective → +1 Fuel
   const supplyLog = [];
   for (const [bk, u] of Object.entries(newState.board)) {
     if (!u || u.owner !== newActive || u.state === 'destroyed') continue;
@@ -1303,11 +1321,24 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
     }
   }
 
+  // Quartermaster ability: at start of turn, if you control both objectives on the map → draw 1
+  for (const [bk, u] of Object.entries(newState.board)) {
+    if (!u || u.owner !== newActive || u.state === 'destroyed') continue;
+    if (CARD_BY_ID[u.cardId]?.id !== 69) continue;
+    const objs = Object.values(newState.objectives);
+    const controlsBoth = objs.length > 0 && objs.every(o => o.controller === newActive);
+    if (controlsBoth) {
+      newState = { ...newState, [newActive]: drawCards(newState[newActive], 1) };
+      supplyLog.push(`Quartermaster: controls both objectives → draw 1`);
+    }
+  }
+
   const { state: afterEffects, log: effectLog, pendingArtyHits } = applyObjectiveEffects(newState, newActive);
   newState = afterEffects;
 
   attackedThisTurn = new Map();
   lastDATargetKey = null;
+  uiState = 'idle';
   selectedHandCardId = null;
   pendingAttackerKey = null;
   pendingCommandId = null;
@@ -1327,7 +1358,10 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
 // ── Cancel ────────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-cancel').addEventListener('click', () => {
-  if (preCommandState) {
+  // Rally Cry: once the first unit is picked and committed, "Cancel" during the second
+  // pick means "stop here" (keep the first pick) — not a full revert of the cast.
+  const rallyCryAlreadyPicked = pendingCommandId === 51 && pendingRallyCryCount < 2;
+  if (preCommandState && !rallyCryAlreadyPicked) {
     state = preCommandState;
     preCommandState = null;
   }
@@ -1335,6 +1369,8 @@ document.getElementById('btn-cancel').addEventListener('click', () => {
   selectedHandCardId = null;
   pendingAttackerKey = null;
   pendingCommandId = null;
+  pendingRallyCryCount = 0;
+  preCommandState = null;
   if (state) redraw();
 });
 
@@ -1428,10 +1464,13 @@ function hideCardPreview() {
 
 // ── Missions side panel ───────────────────────────────────────────────────────
 
-function getMissionCounter(s, role, cardId) {
-  switch (cardId) {
+function getMissionCounter(s, role, mission) {
+  switch (mission.cardId) {
     case 25: return `Kills this turn: ${s[role].killsThisTurn ?? 0} / 2`;
-    case 81: return `Total kills: ${s[role].totalKills ?? 0} / 3`;
+    case 81: {
+      const killsSince = (s[role].totalKills ?? 0) - (mission.killsAtDeploy ?? 0);
+      return `Kills since deploy: ${killsSince} / 3`;
+    }
     case 56: return 'Kill with Aircraft to complete';
     case 84: return 'Kill with Heavy Armor to complete';
     default: return null;
@@ -1450,7 +1489,7 @@ function renderMissionsPanel(s) {
   panel.innerHTML = missions.map(m => {
     const card = CARD_BY_ID[m.cardId];
     if (!card) return '';
-    const counter = getMissionCounter(s, role, m.cardId);
+    const counter = getMissionCounter(s, role, m);
     const turns = m.turnsRemaining;
     return `<div class="mission-detail">
       <div class="md-name">${card.name}</div>

@@ -44,7 +44,7 @@ state = {
 }
 
 PlayerState = {
-  hq: Number,           // starts 20, win condition
+  hq: Number,           // starts 25, win condition
   fuel: Number,         // max 6, gain 3/turn
   hand: Number[],       // array of card IDs
   deck: Number[],       // remaining deck (top = index 0)
@@ -147,10 +147,11 @@ HQ damage is returned from `applyHit` and from `resolveSingleAttack`. Callers ap
 
 ## Known gaps (not yet implemented)
 
-See `CLAUDE.md` section "Digital prototype — deferred implementation notes" for the full list. Short version:
+See `CLAUDE.md` section "Digital prototype — implementation status" for the full list. Short version (verified against code 2026-07-07):
 
-- Bridge, Radar Station, Airfield L1 objective effects need targeting UI
-- Coordinated Strike, Forward Observer, Pincer Maneuver commands need multi-select UI
-- Missions: full system is live. Factory L2 Tank discount still pending.
-- Deck builder: currently 3 hardcoded starter decks
-- GitHub Pages deploy: requires `npx serve` locally for now
+- Bridge, Radar Station, Airfield L1 objective effects still need targeting UI (log-only, manual resolution)
+- Coordinated Strike, Pincer Maneuver commands still need multi-select UI (no logic at all)
+- Inspire, Breakthrough keywords are data tags only, no behavior wired
+- Missions: full system is live, including Factory L2 Tank discount and Forward Observer's deck-order modal
+- Deck builder: currently 4 hardcoded starter decks
+- GitHub Pages deploy: live, no local server needed

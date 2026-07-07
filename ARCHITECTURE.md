@@ -19,6 +19,13 @@
 | 7 | 2026-07-01 | Deck selection lobby screen — 3 starter decks (Blitzkrieg/Defensive Line/Iron Fist), P1 then P2 each pick before game starts; game state initialized with chosen deck IDs |
 | 8 | 2026-07-01 | Map selection + terrain — maps.js with 5 maps (Normandy/Stalingrad/El Alamein/Ardennes/Kursk); terrain rules: Forest=no Tanks, Water=Naval+Aircraft+Airborne only; objectives placed randomly from pool at game start |
 | 9 | 2026-07-01 | Objective control + effects — majority-adjacent rule (checkObjectiveControl in state.js), effects applied at start of each turn (applyObjectiveEffects in game.html), hover tooltip shows all 4 levels with current highlighted |
+| 10 | 2026-07-01 | Firebase multiplayer — create/join lobby (index.html + lobby.js), deck + map picker, real-time sync via pushState/subscribeState; normalizeFirebaseState handles array reconstruction |
+| 11 | 2026-07-02 | Commands + missions fully implemented — all 20 commands and 9 missions wired in game.js; uiState machine extended with 'command-targeting', 'arty-targeting', 'fo-select' modes |
+| 12 | 2026-07-02 | P2 board flip + direction fix — renderBoard accepts flip param (rows/cols iterated in reverse for P2); getSideValue applies P2_FLIP so P2's card.n fires against actual South; buildBoardCard swaps N↔S/E↔W display for opponent cards |
+| 13 | 2026-07-02 | Cache busting — all ES module imports carry ?v=TIMESTAMP; pre-commit hook auto-bumps all ?v= values in game.html and all js/ files on every commit |
+| 14 | 2026-07-02 | Objective placement changed from hardcoded corners to random middle-row flanks (rows 1/2, cols 0 and 3) |
+| 15 | 2026-07-02 | Starter decks updated: Iron Fist replaced with Blitz Breaker (counter-aggro, 40 AP, Guard + Armor wall + full draw engine) |
+| 16 | 2026-07-02 | Double Attack nerf: all 5 DA cards -2 total stats (Tank Hunter, Dive Bomber, Ace Pilot, Storm Squad, Shock Troopers) |
 
 ---
 
@@ -75,7 +82,7 @@ This is the canonical game state object. Firebase stores this exact shape. Do no
 
 ```js
 {
-  hq: number,                // HQ HP, starts 20, game ends at 0
+  hq: number,                // HQ HP, starts 25, game ends at 0
   fuel: number,              // current fuel, max 6
   pendingFuelGain: number,   // delayed fuel (Industrial Surge), added at next startOfTurn
   hand: number[],            // cardIds in hand, order matters for display
@@ -102,10 +109,12 @@ This is the canonical game state object. Firebase stores this exact shape. Do no
   cardId: number,
   owner: "p1" | "p2",
   state: "normal" | "suppressed" | "destroyed",
-  armorHits: number,       // hits absorbed by armor so far (0 until armor starts taking hits)
-  tempKeywords: string[],  // keywords added this turn only (Smoke Screen, Dig In, etc.)
-  tempSideBonus: number,   // +N to all sides this turn (Rally Cry, City objective, etc.)
-  justPlaced: boolean,     // true only on the turn deployed; cleared by endTurn
+  armorHits: number,        // hits absorbed by armor so far (0 until armor starts taking hits)
+  tempKeywords: string[],   // keywords added THIS TURN only (Smoke Screen, Dig In, etc.); cleared by endTurn
+  grantedKeywords: string[], // keywords from commands lasting until owner's NEXT TURN; cleared by startOfTurn
+  tempSideBonus: number,    // +N to all sides this turn (Rally Cry, Entrench, etc.); cleared by endTurn
+  objSideBonus: number,     // +N from objective effects; recalculated each startOfTurn
+  justPlaced: boolean,      // true only on the turn deployed; cleared by endTurn
 }
 ```
 
@@ -117,7 +126,7 @@ All functions are **pure** — they return new state, never mutate in place.
 
 ```js
 createInitialState(p1DeckIds: number[], p2DeckIds: number[]) → GameState
-// Shuffles decks, deals 5 cards to each hand, sets hq=20, fuel=0.
+// Shuffles decks, deals 5 cards to each hand, sets hq=25, fuel=0.
 
 startOfTurn(state: GameState) → GameState
 // Active player gains 3 fuel (+pendingFuelGain, capped at 6).
@@ -138,10 +147,11 @@ spendFuel(playerState: PlayerState, amount: number) → PlayerState
 gainFuel(playerState: PlayerState, amount: number) → PlayerState
 
 getSideValue(boardUnit: BoardUnit, dir: "n"|"e"|"s"|"w") → number
-// Returns card's base side value + tempSideBonus.
+// Returns card's base side value + tempSideBonus + objSideBonus.
+// P2's cards have their directions flipped (P2_FLIP) so N = their front facing P1's side.
 
 getKeywords(boardUnit: BoardUnit) → string[]
-// Returns card's base keyword (if any) + tempKeywords array.
+// Returns card's base keyword (if any) + tempKeywords + grantedKeywords arrays.
 
 maxArmorHits(boardUnit: BoardUnit) → number
 // Heavy Armor → 2, Armor → 1, else → 0.
@@ -212,8 +222,10 @@ resolveSingleAttack(state: GameState, attackerKey: string, targetKey: string)
 ## UI API (`js/ui.js`)
 
 ```js
-renderBoard(state: GameState, selectedTileKey: string|null, validDropKeys: Set<string>|null) → void
+renderBoard(state: GameState, selectedTileKey: string|null, validDropKeys: Set<string>|null, changedKeys?: Set<string>|null, flip?: boolean) → void
 // Writes into #board element. Highlights selectedTileKey, marks validDropKeys green.
+// flip=true reverses row/col iteration so P2 sees board from their side.
+// viewer is derived from flip: flip=true → 'p2' viewer (opponent cards swap N↔S/E↔W in display).
 
 renderHand(handCardIds: number[], containerId: string, selectedCardId: number|null) → void
 // Writes into element with given id. Marks selectedCardId as selected.
@@ -258,8 +270,8 @@ These are locked decisions — don't reinvent them.
 | **Guard** | UI enforces targeting: if a Guard unit is adjacent to the attacker, it must be the target. Guard is ignored if the unit is Suppressed. `resolveDeployment` trusts the caller passed a legal target. |
 | **Armor** | Absorbs 1 hit before state changes. Tracked via `armorHits` on BoardUnit. `applyHit` handles this. |
 | **Heavy Armor** | Absorbs 2 hits. Same mechanism as Armor, `maxArmorHits` returns 2. |
-| **Bombard** | Unit attacks a tile 2 steps in its strongest-value direction, not adjacent tiles. Implemented in `buildAttackList` inside combat.js. |
-| **Double Attack** | Unit attacks all adjacent enemies (same as default but keyword is present for card display). In v1, "all adjacent" is the default anyway — Double Attack becomes meaningful once we add a "choose 1 target" mode. |
+| **Bombard** | Unit can attack any enemy in its entire row or column (not just adjacent). Bypasses Guard enforcement. Implemented in `getBombardTargets` in combat.js. |
+| **Double Attack** | After the first attack resolves, the unit stays selected and targeting mode re-enters automatically — player picks a second target. Guard is bypassed on the second hit (`skipGuard=true`). |
 | **Breakthrough** | After Destroying an enemy, unit can slide into the vacated tile and attack again. **Deferred — not implemented in Phase 1.** For now, Breakthrough is a stat card with no special mechanic. |
 | **Airborne** | Ignores terrain restrictions. **Terrain not implemented in Phase 1**, so Airborne has no mechanical effect yet. Card still shows keyword. |
 | **Inspire** | Adjacent friendly units gain +1 to all sides. **Deferred — not implemented in Phase 1.** Requires tracking adjacency every time a unit moves or is placed. |

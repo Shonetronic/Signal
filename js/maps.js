@@ -73,6 +73,7 @@ export function getTerrain(mapId, row, col) {
 
 // Returns true if the card can legally be placed on terrainType.
 export function canPlaceOnTerrain(card, terrainType) {
+  if (!card) return false;
   if (card.keyword === 'Airborne') return true;       // Airborne bypasses all terrain
   if (terrainType === 'water') {
     return card.cls === 'Naval' || card.cls === 'Aircraft';

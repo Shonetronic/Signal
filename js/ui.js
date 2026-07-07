@@ -1,6 +1,6 @@
-import { CARD_BY_ID } from './cards.js?v=1783341581';
-import { getKeywords, maxArmorHits } from './state.js?v=1783341581';
-import { getTerrain } from './maps.js?v=1783341581';
+import { CARD_BY_ID } from './cards.js?v=1783419937';
+import { getKeywords, maxArmorHits } from './state.js?v=1783419937';
+import { getTerrain } from './maps.js?v=1783419937';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
@@ -241,6 +241,10 @@ export function renderHQ(state) {
   document.getElementById('p2-hq').textContent = state.p2.hq;
   document.getElementById('p1-fuel').textContent = `${state.p1.fuel} / 6 Fuel`;
   document.getElementById('p2-fuel').textContent = `${state.p2.fuel} / 6 Fuel`;
+  const p1CardEl = document.getElementById('p1-cards');
+  const p2CardEl = document.getElementById('p2-cards');
+  if (p1CardEl) p1CardEl.textContent = `${state.p1.hand.length} cards in hand`;
+  if (p2CardEl) p2CardEl.textContent = `${state.p2.hand.length} cards in hand`;
   const round = Math.ceil(state.turn / 2);
   document.getElementById('turn-display').textContent =
     `Round ${round} — ${state.initiative.toUpperCase()} to play`;

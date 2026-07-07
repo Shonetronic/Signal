@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SIGNAL — Objective Tile Designs</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: Arial, sans-serif; background: #1a1a1a; padding: 32px; display: flex; flex-direction: column; gap: 56px; }
+h2 { font-family: 'Arial Narrow', Arial; letter-spacing: 3px; font-size: 13px; color: #fff; margin-bottom: 4px; }
+.desc { font-size: 11px; color: #777; font-family: 'Arial Narrow', Arial; letter-spacing: 1px; margin-bottom: 20px; }
+.row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+.col { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.lbl { font-size: 8px; color: #555; letter-spacing: 2px; font-family: 'Arial Narrow', Arial; }
+
+/* Board background */
+.board-bg { background: #1f1f1f; padding: 8px; border-radius: 4px; display: grid; grid-template-columns: repeat(3, 120px); grid-template-rows: repeat(2, 120px); gap: 3px; }
+.board-bg-light { background: #dde0e8; padding: 8px; border-radius: 4px; display: grid; grid-template-columns: repeat(3, 120px); grid-template-rows: repeat(2, 120px); gap: 3px; }
+
+/* Tile shell */
+.tile {
+  width: 120px; height: 120px;
+  border: 1px solid;
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+  font-family: 'Arial Narrow', Arial;
+  cursor: pointer;
+}
+/* Plain tiles for context */
+.tile.plain-dark  { background: #1a1a1a; border-color: #333; }
+.tile.plain-light { background: #ffffff; border-color: #ccd0dd; }
+/* Terrain label */
+.terrain-lbl { position: absolute; top: 3px; right: 4px; font-size: 7px; color: #444; letter-spacing: 1px; font-family: 'Arial Narrow', Arial; }
+.tile.plain-light .terrain-lbl { color: #aab0c0; }
+
+/* Fake unit card on tile */
+.fake-unit {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  border: 2px solid;
+  border-radius: 2px;
+  font-family: 'Arial Narrow', Arial;
+  overflow: hidden;
+  z-index: 3;
+}
+.fake-unit.p1-dark  { border-color: #5599ff; background: #0a1428; color: #fff; }
+.fake-unit.p1-light { border-color: #2266cc; background: #e8f0ff; color: #111; }
+.fu-name { font-size: 7px; font-weight: bold; padding: 2px 3px; background: rgba(0,0,0,0.3); }
+.fu-dirs { display: grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:1fr 1fr 1fr; flex:1; font-size:14px; font-weight:bold; text-align:center; }
+.fu-dirs > div { display:flex; align-items:center; justify-content:center; }
+.fu-kw { font-size: 7px; font-weight: bold; color: #f0c030; padding: 1px 3px; background: rgba(0,0,0,0.3); }
+
+/* ═══ OPTION A: Center stack — OBJECTIVE badge top, name center, level bottom ═══ */
+.oa { border-color: #c49a28; background: #1c1800; }
+.oa.ctrl-p1 { border-color: #5599ff !important; background: #0a1428 !important; }
+.oa.ctrl-p2 { border-color: #ff5555 !important; background: #280a0a !important; }
+.oa .obj-badge { position: absolute; top: 5px; left: 50%; transform: translateX(-50%); font-size: 7px; font-weight: bold; color: #c49a28; letter-spacing: 2px; white-space: nowrap; }
+.oa .obj-name  { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 13px; font-weight: bold; color: #f0e0a0; text-align: center; width: 100%; padding: 0 6px; line-height: 1.2; }
+.oa .obj-level { position: absolute; bottom: 5px; right: 6px; font-size: 10px; font-weight: bold; color: #c49a28; }
+.oa .obj-ctrl-tag { position: absolute; bottom: 5px; left: 6px; font-size: 7px; font-weight: bold; color: #5599ff; }
+.oa .obj-ctrl-tag.p2 { color: #ff5555; }
+/* Light */
+.oa.light { border-color: #aa7700; background: #fffae8; }
+.oa.light.ctrl-p1 { border-color: #2266cc !important; background: #e8f0ff !important; }
+.oa.light.ctrl-p2 { border-color: #cc2233 !important; background: #ffe8e8 !important; }
+.oa.light .obj-badge { color: #aa7700; }
+.oa.light .obj-name  { color: #2a1a00; }
+.oa.light .obj-level { color: #aa7700; }
+.oa.light .obj-ctrl-tag { color: #2266cc; }
+.oa.light .obj-ctrl-tag.p2 { color: #cc2233; }
+
+/* ═══ OPTION B: Top name bar + body ═══ */
+.ob { border-color: #c49a28; background: #1c1800; }
+.ob.ctrl-p1 { border-color: #5599ff !important; }
+.ob.ctrl-p2 { border-color: #ff5555 !important; }
+.ob .obj-topbar { position: absolute; top: 0; left: 0; right: 0; background: rgba(196,154,40,0.25); border-bottom: 1px solid rgba(196,154,40,0.4); padding: 3px 5px; display: flex; justify-content: space-between; align-items: center; }
+.ob .obj-topbar-name { font-size: 10px; font-weight: bold; color: #f0e0a0; }
+.ob .obj-topbar-lvl  { font-size: 9px; font-weight: bold; color: #c49a28; }
+.ob .obj-body { position: absolute; top: 22px; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.ob .obj-type-lbl { font-size: 8px; font-weight: bold; color: #c49a28; letter-spacing: 2px; }
+.ob .obj-cat  { font-size: 7px; color: #8a7040; }
+.ob .obj-ctrl-tag { font-size: 7px; font-weight: bold; color: #5599ff; margin-top: 4px; }
+.ob .obj-ctrl-tag.p2 { color: #ff5555; }
+/* Light */
+.ob.light { border-color: #aa7700; background: #fffae8; }
+.ob.light.ctrl-p1 { border-color: #2266cc !important; }
+.ob.light.ctrl-p2 { border-color: #cc2233 !important; }
+.ob.light .obj-topbar { background: rgba(170,119,0,0.15); border-bottom-color: rgba(170,119,0,0.3); }
+.ob.light .obj-topbar-name { color: #2a1800; }
+.ob.light .obj-topbar-lvl  { color: #aa7700; }
+.ob.light .obj-type-lbl    { color: #aa7700; }
+.ob.light .obj-cat         { color: #aa8840; }
+.ob.light .obj-ctrl-tag    { color: #2266cc; }
+.ob.light .obj-ctrl-tag.p2 { color: #cc2233; }
+
+/* ═══ OPTION C: Bottom strip — name + OBJECTIVE+level at bottom ═══ */
+.oc { border-color: #c49a28; background: #1c1800; }
+.oc.ctrl-p1 { border-color: #5599ff !important; background: #0a1428 !important; }
+.oc.ctrl-p2 { border-color: #ff5555 !important; background: #280a0a !important; }
+.oc .obj-bottom { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(196,154,40,0.22); border-top: 1px solid rgba(196,154,40,0.45); padding: 4px 5px; }
+.oc .obj-bottom-name { font-size: 11px; font-weight: bold; color: #f0e0a0; line-height: 1.1; }
+.oc .obj-bottom-meta { display: flex; justify-content: space-between; margin-top: 2px; }
+.oc .obj-bottom-type { font-size: 7px; color: #c49a28; letter-spacing: 1px; font-weight: bold; }
+.oc .obj-bottom-lvl  { font-size: 8px; font-weight: bold; color: #c49a28; }
+.oc .obj-ctrl-tag { position: absolute; top: 5px; right: 5px; font-size: 7px; font-weight: bold; color: #5599ff; }
+.oc .obj-ctrl-tag.p2 { color: #ff5555; }
+/* Light */
+.oc.light { border-color: #aa7700; background: #fffae8; }
+.oc.light.ctrl-p1 { border-color: #2266cc !important; background: #e8f0ff !important; }
+.oc.light.ctrl-p2 { border-color: #cc2233 !important; background: #ffe8e8 !important; }
+.oc.light .obj-bottom { background: rgba(170,119,0,0.14); border-top-color: rgba(170,119,0,0.35); }
+.oc.light .obj-bottom-name { color: #2a1800; }
+.oc.light .obj-bottom-type { color: #aa7700; }
+.oc.light .obj-bottom-lvl  { color: #aa7700; }
+.oc.light .obj-ctrl-tag    { color: #2266cc; }
+.oc.light .obj-ctrl-tag.p2 { color: #cc2233; }
+
+/* ═══ OPTION D: Level dot track + centered name ═══ */
+.od { border-color: #c49a28; background: #1c1800; }
+.od.ctrl-p1 { border-color: #5599ff !important; background: #0a1428 !important; }
+.od.ctrl-p2 { border-color: #ff5555 !important; background: #280a0a !important; }
+.od .obj-header { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: 3px 5px; }
+.od .obj-type { font-size: 7px; font-weight: bold; color: #c49a28; letter-spacing: 1.5px; }
+.od .obj-ctrl-tag { font-size: 7px; font-weight: bold; color: #5599ff; }
+.od .obj-ctrl-tag.p2 { color: #ff5555; }
+.od .obj-name { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-55%); font-size: 12px; font-weight: bold; color: #f0e0a0; text-align: center; width: 100%; padding: 0 6px; line-height: 1.2; }
+.od .level-track { position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; }
+.od .lvdot { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #c49a28; display: flex; align-items: center; justify-content: center; font-size: 7px; font-weight: bold; color: #c49a28; }
+.od .lvdot.done   { background: rgba(196,154,40,0.15); color: #6a5020; border-color: #4a3810; }
+.od .lvdot.active { background: #c49a28; color: #1c1800; border-color: #f0c030; }
+.od .lvdot.future { background: transparent; color: #4a3820; border-color: #3a2a10; }
+/* Light */
+.od.light { border-color: #aa7700; background: #fffae8; }
+.od.light.ctrl-p1 { border-color: #2266cc !important; background: #e8f0ff !important; }
+.od.light.ctrl-p2 { border-color: #cc2233 !important; background: #ffe8e8 !important; }
+.od.light .obj-type { color: #aa7700; }
+.od.light .obj-ctrl-tag { color: #2266cc; }
+.od.light .obj-ctrl-tag.p2 { color: #cc2233; }
+.od.light .obj-name { color: #2a1800; }
+.od.light .lvdot { border-color: #aa7700; color: #aa7700; }
+.od.light .lvdot.done   { background: rgba(170,119,0,0.1); color: #ccaa66; border-color: #ddbb88; }
+.od.light .lvdot.active { background: #aa7700; color: #fff8e8; border-color: #cc9900; }
+.od.light .lvdot.future { background: transparent; color: #ddcc99; border-color: #ddcc99; }
+</style>
+</head>
+<body>
+
+<!-- ═══ A ═══ -->
+<div>
+<h2>OPTION A — CENTER STACK (OBJECTIVE badge top, name center, level bottom-right)</h2>
+<div class="desc">Simplest layout. OBJECTIVE small at top, name large in center, level bottom-right, controller tag bottom-left. Same tint on background changes when P1/P2 control it.</div>
+<div class="row">
+  <div class="col">
+    <div class="lbl">DARK</div>
+    <div class="board-bg">
+      <div class="tile plain-dark"><div class="terrain-lbl">PLN</div></div>
+      <div class="tile oa">
+        <div class="obj-badge">OBJECTIVE</div>
+        <div class="obj-name">Airfield</div>
+        <div class="obj-level">L2</div>
+      </div>
+      <div class="tile plain-dark"><div class="terrain-lbl">FOR</div></div>
+      <div class="tile plain-dark"><div class="terrain-lbl">PLN</div></div>
+      <div class="tile oa ctrl-p1">
+        <div class="obj-badge">OBJECTIVE</div>
+        <div class="obj-name">Artillery Position</div>
+        <div class="obj-level">L3</div>
+        <div class="obj-ctrl-tag">P1</div>
+      </div>
+      <div class="tile oa ctrl-p2">
+        <div class="obj-badge">OBJECTIVE</div>
+        <div class="obj-name">City</div>
+        <div class="obj-level">L1</div>
+        <div class="obj-ctrl-tag p2">P2</div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">DARK · with unit</div>
+    <div class="board-bg">
+      <div class="tile plain-dark"></div>
+      <div class="tile oa ctrl-p1" style="border-color:#5599ff;background:#0a1428">
+        <div class="obj-badge" style="color:#5599ff">OBJECTIVE</div>
+        <div class="obj-name" style="color:#5599ff;opacity:.3">Airfield</div>
+        <div class="obj-level" style="color:#5599ff;opacity:.3">L2</div>
+        <div class="fake-unit p1-dark">
+          <div class="fu-name">Sherman Tank</div>
+          <div class="fu-dirs"><div></div><div>7</div><div></div><div>1</div><div style="font-size:7px;opacity:.3">T</div><div>6</div><div></div><div>4</div><div></div></div>
+          <div class="fu-kw">Armor</div>
+        </div>
+      </div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">LIGHT</div>
+    <div class="board-bg-light">
+      <div class="tile plain-light"><div class="terrain-lbl">PLN</div></div>
+      <div class="tile oa light">
+        <div class="obj-badge">OBJECTIVE</div>
+        <div class="obj-name">Airfield</div>
+        <div class="obj-level">L2</div>
+      </div>
+      <div class="tile plain-light"><div class="terrain-lbl">FOR</div></div>
+      <div class="tile plain-light"><div class="terrain-lbl">PLN</div></div>
+      <div class="tile oa light ctrl-p1">
+        <div class="obj-badge">OBJECTIVE</div>
+        <div class="obj-name">Artillery Position</div>
+        <div class="obj-level">L3</div>
+        <div class="obj-ctrl-tag">P1</div>
+      </div>
+      <div class="tile oa light ctrl-p2">
+        <div class="obj-badge">OBJECTIVE</div>
+        <div class="obj-name">City</div>
+        <div class="obj-level">L1</div>
+        <div class="obj-ctrl-tag p2">P2</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══ B ═══ -->
+<div>
+<h2>OPTION B — TOP BAR (name + level in a gold header strip, OBJECTIVE + category below)</h2>
+<div class="desc">Full-width name bar at top — most visible even with a unit on the tile. Below: OBJECTIVE type and category centered. When a unit is placed, the name bar still peeks out.</div>
+<div class="row">
+  <div class="col">
+    <div class="lbl">DARK</div>
+    <div class="board-bg">
+      <div class="tile plain-dark"></div>
+      <div class="tile ob">
+        <div class="obj-topbar"><span class="obj-topbar-name">Airfield</span><span class="obj-topbar-lvl">L2</span></div>
+        <div class="obj-body"><div class="obj-type-lbl">OBJECTIVE</div><div class="obj-cat">Air / Tempo</div></div>
+      </div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile ob ctrl-p1">
+        <div class="obj-topbar"><span class="obj-topbar-name">Artillery Position</span><span class="obj-topbar-lvl">L3</span></div>
+        <div class="obj-body"><div class="obj-type-lbl">OBJECTIVE</div><div class="obj-cat">Damage</div><div class="obj-ctrl-tag">P1 CONTROLS</div></div>
+      </div>
+      <div class="tile ob ctrl-p2">
+        <div class="obj-topbar"><span class="obj-topbar-name">City</span><span class="obj-topbar-lvl">L1</span></div>
+        <div class="obj-body"><div class="obj-type-lbl">OBJECTIVE</div><div class="obj-cat">Infantry / Defense</div><div class="obj-ctrl-tag p2">P2 CONTROLS</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">DARK · with unit</div>
+    <div class="board-bg">
+      <div class="tile plain-dark"></div>
+      <div class="tile ob ctrl-p1">
+        <div class="obj-topbar" style="z-index:4;position:absolute;top:0;left:0;right:0"><span class="obj-topbar-name">Airfield</span><span class="obj-topbar-lvl">L2</span></div>
+        <div class="fake-unit p1-dark" style="top:22px">
+          <div class="fu-name">Sherman Tank</div>
+          <div class="fu-dirs"><div></div><div>7</div><div></div><div>1</div><div style="font-size:7px;opacity:.3">T</div><div>6</div><div></div><div>4</div><div></div></div>
+          <div class="fu-kw">Armor</div>
+        </div>
+      </div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">LIGHT</div>
+    <div class="board-bg-light">
+      <div class="tile plain-light"></div>
+      <div class="tile ob light">
+        <div class="obj-topbar"><span class="obj-topbar-name">Airfield</span><span class="obj-topbar-lvl">L2</span></div>
+        <div class="obj-body"><div class="obj-type-lbl">OBJECTIVE</div><div class="obj-cat">Air / Tempo</div></div>
+      </div>
+      <div class="tile plain-light"></div>
+      <div class="tile plain-light"></div>
+      <div class="tile ob light ctrl-p1">
+        <div class="obj-topbar"><span class="obj-topbar-name">Artillery Position</span><span class="obj-topbar-lvl">L3</span></div>
+        <div class="obj-body"><div class="obj-type-lbl">OBJECTIVE</div><div class="obj-cat">Damage</div><div class="obj-ctrl-tag">P1 CONTROLS</div></div>
+      </div>
+      <div class="tile ob light ctrl-p2">
+        <div class="obj-topbar"><span class="obj-topbar-name">City</span><span class="obj-topbar-lvl">L1</span></div>
+        <div class="obj-body"><div class="obj-type-lbl">OBJECTIVE</div><div class="obj-cat">Infantry / Defense</div><div class="obj-ctrl-tag p2">P2 CONTROLS</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══ C ═══ -->
+<div>
+<h2>OPTION C — BOTTOM STRIP (name+meta pinned to bottom, top free for unit)</h2>
+<div class="desc">Name and OBJECTIVE label in a gold-tinted strip at the bottom. Top of tile is open — when a unit is placed it fills the top naturally. Controller tag top-right corner.</div>
+<div class="row">
+  <div class="col">
+    <div class="lbl">DARK</div>
+    <div class="board-bg">
+      <div class="tile plain-dark"></div>
+      <div class="tile oc">
+        <div class="obj-bottom">
+          <div class="obj-bottom-name">Airfield</div>
+          <div class="obj-bottom-meta"><span class="obj-bottom-type">OBJECTIVE</span><span class="obj-bottom-lvl">L2</span></div>
+        </div>
+      </div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile oc ctrl-p1">
+        <div class="obj-ctrl-tag">P1</div>
+        <div class="obj-bottom">
+          <div class="obj-bottom-name">Artillery Position</div>
+          <div class="obj-bottom-meta"><span class="obj-bottom-type">OBJECTIVE</span><span class="obj-bottom-lvl">L3</span></div>
+        </div>
+      </div>
+      <div class="tile oc ctrl-p2">
+        <div class="obj-ctrl-tag p2">P2</div>
+        <div class="obj-bottom">
+          <div class="obj-bottom-name">City</div>
+          <div class="obj-bottom-meta"><span class="obj-bottom-type">OBJECTIVE</span><span class="obj-bottom-lvl">L1</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">DARK · with unit</div>
+    <div class="board-bg">
+      <div class="tile plain-dark"></div>
+      <div class="tile oc ctrl-p1">
+        <div class="obj-bottom" style="z-index:4">
+          <div class="obj-bottom-name">Airfield</div>
+          <div class="obj-bottom-meta"><span class="obj-bottom-type">OBJECTIVE</span><span class="obj-bottom-lvl">L2</span></div>
+        </div>
+        <div class="fake-unit p1-dark" style="bottom:36px;top:0;position:absolute;left:0;right:0">
+          <div class="fu-name">Sherman Tank</div>
+          <div class="fu-dirs"><div></div><div>7</div><div></div><div>1</div><div style="font-size:7px;opacity:.3">T</div><div>6</div><div></div><div>4</div><div></div></div>
+        </div>
+      </div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">LIGHT</div>
+    <div class="board-bg-light">
+      <div class="tile plain-light"></div>
+      <div class="tile oc light">
+        <div class="obj-bottom">
+          <div class="obj-bottom-name">Airfield</div>
+          <div class="obj-bottom-meta"><span class="obj-bottom-type">OBJECTIVE</span><span class="obj-bottom-lvl">L2</span></div>
+        </div>
+      </div>
+      <div class="tile plain-light"></div>
+      <div class="tile plain-light"></div>
+      <div class="tile oc light ctrl-p1">
+        <div class="obj-ctrl-tag">P1</div>
+        <div class="obj-bottom">
+          <div class="obj-bottom-name">Artillery Position</div>
+          <div class="obj-bottom-meta"><span class="obj-bottom-type">OBJECTIVE</span><span class="obj-bottom-lvl">L3</span></div>
+        </div>
+      </div>
+      <div class="tile oc light ctrl-p2">
+        <div class="obj-ctrl-tag p2">P2</div>
+        <div class="obj-bottom">
+          <div class="obj-bottom-name">City</div>
+          <div class="obj-bottom-meta"><span class="obj-bottom-type">OBJECTIVE</span><span class="obj-bottom-lvl">L1</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ═══ D ═══ -->
+<div>
+<h2>OPTION D — LEVEL DOTS (name center, 4 level dots at bottom showing progression)</h2>
+<div class="desc">OBJECTIVE + controller at top. Name bold in center. Four dot indicators at bottom: past=dim, active=filled gold, future=outline. Shows escalation progress at a glance.</div>
+<div class="row">
+  <div class="col">
+    <div class="lbl">DARK</div>
+    <div class="board-bg">
+      <div class="tile plain-dark"></div>
+      <div class="tile od">
+        <div class="obj-header"><span class="obj-type">OBJECTIVE</span></div>
+        <div class="obj-name">Airfield</div>
+        <div class="level-track">
+          <div class="lvdot done">1</div>
+          <div class="lvdot active">2</div>
+          <div class="lvdot future">3</div>
+          <div class="lvdot future">4</div>
+        </div>
+      </div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile od ctrl-p1">
+        <div class="obj-header"><span class="obj-type">OBJECTIVE</span><span class="obj-ctrl-tag">P1</span></div>
+        <div class="obj-name">Artillery Position</div>
+        <div class="level-track">
+          <div class="lvdot done">1</div>
+          <div class="lvdot done">2</div>
+          <div class="lvdot active">3</div>
+          <div class="lvdot future">4</div>
+        </div>
+      </div>
+      <div class="tile od ctrl-p2">
+        <div class="obj-header"><span class="obj-type">OBJECTIVE</span><span class="obj-ctrl-tag p2">P2</span></div>
+        <div class="obj-name">City</div>
+        <div class="level-track">
+          <div class="lvdot active">1</div>
+          <div class="lvdot future">2</div>
+          <div class="lvdot future">3</div>
+          <div class="lvdot future">4</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">DARK · with unit</div>
+    <div class="board-bg">
+      <div class="tile plain-dark"></div>
+      <div class="tile od ctrl-p1">
+        <div class="obj-header" style="z-index:4"><span class="obj-type" style="color:#5599ff">OBJECTIVE</span><span class="obj-ctrl-tag">P1</span></div>
+        <div class="level-track" style="z-index:4">
+          <div class="lvdot done">1</div>
+          <div class="lvdot active">2</div>
+          <div class="lvdot future">3</div>
+          <div class="lvdot future">4</div>
+        </div>
+        <div class="fake-unit p1-dark" style="top:18px;bottom:26px;position:absolute;left:0;right:0">
+          <div class="fu-name">Sherman Tank</div>
+          <div class="fu-dirs"><div></div><div>7</div><div></div><div>1</div><div style="font-size:7px;opacity:.3">T</div><div>6</div><div></div><div>4</div><div></div></div>
+        </div>
+      </div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+      <div class="tile plain-dark"></div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="lbl">LIGHT</div>
+    <div class="board-bg-light">
+      <div class="tile plain-light"></div>
+      <div class="tile od light">
+        <div class="obj-header"><span class="obj-type">OBJECTIVE</span></div>
+        <div class="obj-name">Airfield</div>
+        <div class="level-track">
+          <div class="lvdot done">1</div>
+          <div class="lvdot active">2</div>
+          <div class="lvdot future">3</div>
+          <div class="lvdot future">4</div>
+        </div>
+      </div>
+      <div class="tile plain-light"></div>
+      <div class="tile plain-light"></div>
+      <div class="tile od light ctrl-p1">
+        <div class="obj-header"><span class="obj-type">OBJECTIVE</span><span class="obj-ctrl-tag">P1</span></div>
+        <div class="obj-name">Artillery Position</div>
+        <div class="level-track">
+          <div class="lvdot done">1</div>
+          <div class="lvdot done">2</div>
+          <div class="lvdot active">3</div>
+          <div class="lvdot future">4</div>
+        </div>
+      </div>
+      <div class="tile od light ctrl-p2">
+        <div class="obj-header"><span class="obj-type">OBJECTIVE</span><span class="obj-ctrl-tag p2">P2</span></div>
+        <div class="obj-name">City</div>
+        <div class="level-track">
+          <div class="lvdot active">1</div>
+          <div class="lvdot future">2</div>
+          <div class="lvdot future">3</div>
+          <div class="lvdot future">4</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+</body>
+</html>
