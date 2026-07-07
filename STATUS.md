@@ -91,7 +91,7 @@ Legend: ✅ done | ⚠️ partial | ❌ missing
 | Hold the Line | 23 | ✅ | Control all objectives at end of turn → +5 HQ |
 | Deep Strike | 24 | ✅ | Friendly adjacent to 2+ enemies → 2 HQ damage |
 | Blitz Assault | 25 | ✅ | 2+ kills this turn → draw 2 + 1 Fuel |
-| Armored Spearhead | 55 | ✅ | Instant on play — next Tank costs 2 less Fuel |
+| Armored Spearhead | 55 | ✅ | 2+ friendly Tanks on board simultaneously → next Tank costs 2 less Fuel. Limit 3 turns. |
 | Total Air Superiority | 56 | ✅ | Kill with Aircraft → 2 HQ damage |
 | Fortify the Line | 57 | ✅ | Control 2+ objectives at end of turn → un-suppress 1 unit + Armor |
 | Encirclement | 58 | ✅ | Enemy surrounded on 2+ sides → 1 hit to that enemy |

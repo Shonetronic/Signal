@@ -11,6 +11,9 @@
 //   board: { [tileKey]: BoardUnit | null },   — tileKey = "row,col"
 //   objectives: { [tileKey]: { cardId, level } },
 //   log: string[],
+//   pendingArtyHits: number,    — Artillery Position L2/L4 hits owed to `initiative` player, synced so the
+//                                 controlling player's own client (not just whoever ended the prior turn)
+//                                 enters targeting mode; 0 once resolved.
 // }
 //
 // PlayerState: {
@@ -38,7 +41,7 @@
 //   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1783419937';
+import { CARD_BY_ID } from './cards.js?v=1783420939';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
@@ -58,6 +61,7 @@ export function createInitialState(p1DeckIds, p2DeckIds, mapId = 'kursk') {
     ),
     objectives: {},
     log: [],
+    pendingArtyHits: 0,
   };
 }
 

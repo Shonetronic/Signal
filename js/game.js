@@ -1,4 +1,4 @@
-import { CARD_BY_ID } from './cards.js?v=1783419937';
+import { CARD_BY_ID } from './cards.js?v=1783420939';
 import {
   createInitialState,
   startOfTurn,
@@ -13,11 +13,11 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783419937';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783419937';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783419937';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783419937';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783419937';
+} from './state.js?v=1783420939';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783420939';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783420939';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783420939';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783420939';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -392,10 +392,23 @@ function redraw() {
   }
 }
 
+// Artillery Position L2/L4 hits are stored on state.pendingArtyHits (synced via Firebase) instead of
+// only the local pendingArtyHitCount variable, so the client of the player who actually controls the
+// objective enters targeting mode at the start of their turn — not just whoever ended the prior turn.
+function syncArtyTargetingUiState() {
+  const hits = state.pendingArtyHits ?? 0;
+  const iAmActive = myRole === null || myRole === state.initiative;
+  if (hits > 0 && iAmActive) {
+    pendingArtyHitCount = hits;
+    uiState = 'arty-targeting';
+  }
+}
+
 function commitState(newState, logLines) {
   lastChangedKeys = new Set(); // player acted — clear opponent highlights
   state = { ...newState, log: [...(newState.log ?? []), ...(logLines ?? [])] };
   if (logLines?.length) appendLog(logLines);
+  syncArtyTargetingUiState();
   redraw();
   pushStateIfOnline(state);
 }
@@ -448,6 +461,7 @@ function receiveRemoteState(remoteState) {
   const newEntries = (normalized.log ?? []).slice(prevLogLen);
   if (newEntries.length) appendLog(newEntries);
   uiState = 'idle';
+  syncArtyTargetingUiState(); // overrides 'idle' above if this client owes an Artillery Position hit
   selectedHandCardId = null;
   pendingAttackerKey = null;
   pendingCommandId = null;
@@ -544,10 +558,13 @@ document.getElementById('board').addEventListener('click', e => {
     const finalUnit = newUnit.state === 'destroyed' ? null : newUnit;
     const newBoard = { ...state.board, [clickedKey]: finalUnit };
     const defOwner = unit.owner;
-    const newS = { ...state, board: newBoard, [defOwner]: { ...state[defOwner], hq: state[defOwner].hq - hqDamage } };
-    const stateLabel = finalUnit === null ? 'Destroyed' : newUnit.state === 'suppressed' ? 'Suppressed' : 'armor absorbed';
     pendingArtyHitCount--;
     uiState = pendingArtyHitCount > 0 ? 'arty-targeting' : 'idle';
+    const newS = {
+      ...state, board: newBoard, pendingArtyHits: pendingArtyHitCount,
+      [defOwner]: { ...state[defOwner], hq: state[defOwner].hq - hqDamage },
+    };
+    const stateLabel = finalUnit === null ? 'Destroyed' : newUnit.state === 'suppressed' ? 'Suppressed' : 'armor absorbed';
     commitState(newS, [`Artillery Position: ${CARD_BY_ID[unit.cardId]?.name} → ${stateLabel}`]);
     checkWin();
     return;
@@ -1140,21 +1157,16 @@ function playMissionCard(cardId) {
   let s = { ...state, [active]: { ...state[active], fuel: state[active].fuel - card.cost, hand: handAfter } };
   const log = [];
 
-  if (cardId === 55) { // Armored Spearhead: instant — next Tank costs 2 less
-    s = { ...s, [active]: { ...s[active], tempFuelDiscount: (s[active].tempFuelDiscount ?? 0) + 2 } };
-    log.push(`${card.name}: played — next Tank costs 2 less Fuel`);
-  } else {
-    const newMission = {
-      cardId,
-      turnsRemaining: card.limitTurns || 5,
-      ...(cardId === 81 ? { killsAtDeploy: s[active].totalKills ?? 0 } : {}),
-    };
-    s = { ...s, [active]: { ...s[active], missions: [...s[active].missions, newMission] } };
-    log.push(`${card.name}: mission active (${newMission.turnsRemaining} turns)`);
-    const { state: afterCheck, log: checkLog } = checkActiveMissions(s, active, {});
-    s = afterCheck;
-    log.push(...checkLog);
-  }
+  const newMission = {
+    cardId,
+    turnsRemaining: card.limitTurns || 5,
+    ...(cardId === 81 ? { killsAtDeploy: s[active].totalKills ?? 0 } : {}),
+  };
+  s = { ...s, [active]: { ...s[active], missions: [...s[active].missions, newMission] } };
+  log.push(`${card.name}: mission active (${newMission.turnsRemaining} turns)`);
+  const { state: afterCheck, log: checkLog } = checkActiveMissions(s, active, {});
+  s = afterCheck;
+  log.push(...checkLog);
 
   commitState(s, log);
 }
@@ -1204,6 +1216,10 @@ function evalMissionCondition(s, player, mission, ctx) {
     }
     case 25: // Blitz Assault: 2+ kills this turn
       return { met: (s[player].killsThisTurn ?? 0) >= 2 };
+    case 55: { // Armored Spearhead: 2+ friendly Tanks on board simultaneously
+      const tankCount = friendlies.filter(([, u]) => CARD_BY_ID[u.cardId]?.cls === 'Tank').length;
+      return { met: tankCount >= 2 };
+    }
     case 56: // Total Air Superiority: kill with Aircraft
       return { met: !!ctx.aircraftKill };
     case 57: { // Fortify the Line: control 2+ objectives at end of turn
@@ -1238,6 +1254,10 @@ function applyMissionReward(s, player, cardId, targetKey) {
     case 24: // Deep Strike: 2 HQ damage
       s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
       log.push(`${nm}: COMPLETE — 2 HQ damage to ${opp.toUpperCase()}`);
+      break;
+    case 55: // Armored Spearhead: next Tank costs 2 less Fuel
+      s = { ...s, [player]: { ...s[player], tempFuelDiscount: (s[player].tempFuelDiscount ?? 0) + 2 } };
+      log.push(`${nm}: COMPLETE — next Tank costs 2 less Fuel`);
       break;
     case 25: { // Blitz Assault: draw 2 + 1 Fuel
       s = { ...s, [player]: drawCards(gainFuel(s[player], 1, false), 2) };
@@ -1334,7 +1354,9 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   }
 
   const { state: afterEffects, log: effectLog, pendingArtyHits } = applyObjectiveEffects(newState, newActive);
-  newState = afterEffects;
+  // Synced onto state (not just a local variable) so the controlling player's own client — not just
+  // whoever clicked End Turn — knows to enter arty-targeting mode. See syncArtyTargetingUiState().
+  newState = { ...afterEffects, pendingArtyHits };
 
   attackedThisTurn = new Map();
   lastDATargetKey = null;
@@ -1347,12 +1369,6 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   const turnLog = [...endMissionLog, `--- Round ${newRound} — ${newState.initiative.toUpperCase()} ---`, ...supplyLog, ...effectLog];
   commitState(newState, turnLog);
   checkWin();
-
-  if (pendingArtyHits > 0 && !gameOver) {
-    pendingArtyHitCount = pendingArtyHits;
-    uiState = 'arty-targeting';
-    redraw();
-  }
 });
 
 // ── Cancel ────────────────────────────────────────────────────────────────────
