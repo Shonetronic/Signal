@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS } from './cards.js?v=1783507009';
+import { CARD_BY_ID, CARDS } from './cards.js?v=1783507473';
 import {
   createInitialState,
   startOfTurn,
@@ -13,12 +13,12 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783507009';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783507009';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783507009';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783507009';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783507009';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783507009';
+} from './state.js?v=1783507473';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783507473';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783507473';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783507473';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783507473';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783507473';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -1836,5 +1836,13 @@ document.getElementById('debug-draw-go').addEventListener('click', () => {
   const n = Number(document.getElementById('debug-draw-count').value);
   if (n <= 0) return;
   const { state: newState, log } = debugDrawCards(state, debugTargetPlayer, n);
+  commitState(newState, log);
+});
+
+document.getElementById('debug-turn-go').addEventListener('click', () => {
+  if (!state) return;
+  const turn = Number(document.getElementById('debug-turn-value').value);
+  if (turn < 1) return;
+  const { state: newState, log } = debugSkipToTurn(state, turn);
   commitState(newState, log);
 });
