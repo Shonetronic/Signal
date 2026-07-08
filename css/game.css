@@ -344,26 +344,35 @@ body[data-theme="light"] .theme-toggle {
   line-height: 1.8;
 }
 .mission-detail {
+  position: relative;
   background: var(--bg-deep);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
   border-radius: 3px;
   padding: 10px;
+  padding-right: 34px;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
+.mission-detail.p1 { border-left-color: var(--p1); }
+.mission-detail.p2 { border-left-color: var(--p2); }
+.md-player-badge {
+  position: absolute;
+  top: 8px; right: 10px;
+  font-size: 8px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  font-family: 'Arial Narrow', Arial, sans-serif;
+}
+.md-player-badge.p1 { color: var(--p1); }
+.md-player-badge.p2 { color: var(--p2); }
 .md-name {
   font-size: 12px;
   font-weight: bold;
   color: var(--gold);
   font-family: 'Arial Narrow', Arial, sans-serif;
   letter-spacing: 0.5px;
-}
-.md-turns {
-  font-size: 9px;
-  color: var(--text-c);
-  letter-spacing: 1px;
-  font-family: 'Arial Narrow', Arial, sans-serif;
   margin-bottom: 4px;
 }
 .md-counter {
@@ -1028,7 +1037,7 @@ body[data-theme="light"] .stat-fuel { color: #2266cc; }
 
 /* Mission panel — E theme */
 body[data-theme="light"] .missions-panel-title { color: #666880; }
-body[data-theme="light"] .mission-detail { background: #ffffff; border-color: #d0d4e0; }
+body[data-theme="light"] .mission-detail { background: #ffffff; border-top-color: #d0d4e0; border-right-color: #d0d4e0; border-bottom-color: #d0d4e0; }
 body[data-theme="light"] .missions-empty { color: #9999aa; border-color: #d0d4e0; }
 body[data-theme="light"] .md-name { color: #bb8800; }
 body[data-theme="light"] .md-turns { color: #9999aa; }

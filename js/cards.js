@@ -1,7 +1,7 @@
 // All 83 cards. Each card has a stable numeric id.
 // Units: { id, name, cls, rarity, type:"unit", cost, ap, keyword, n, e, s, w, ability }
 // Commands: { id, name, rarity, type:"command", cost, ap, effect }
-// Missions: { id, name, rarity, type:"mission", cost, ap, req, reward, limitTurns }
+// Missions: { id, name, rarity, type:"mission", cost, ap, req, reward } — no turn limit
 // Objectives: { id, name, type:"objective", category, l1, l2, l3, l4 }
 
 export const CARDS = [
@@ -75,15 +75,15 @@ export const CARDS = [
   { id:80, name:"Entrench",            rarity:"Common", type:"command", cost:2, ap:2, effect:"Friendly Infantry you control gain +2 to all sides until your next turn." },
 
   // ── MISSIONS ───────────────────────────────────────────────────────────
-  { id:23, name:"Hold the Line",       rarity:"Common", type:"mission", cost:0, ap:0, req:"Control all objectives at end of your turn.",                                          reward:"Heal 5 HQ HP.",                          limitTurns:5 },
-  { id:24, name:"Deep Strike",         rarity:"Common", type:"mission", cost:1, ap:2, req:"Have a friendly unit adjacent to 2+ enemy units simultaneously.",                      reward:"Deal 2 HQ damage.",                      limitTurns:3 },
-  { id:25, name:"Blitz Assault",       rarity:"Common", type:"mission", cost:0, ap:0, req:"Destroy 2 enemy units in a single turn.",                                              reward:"Draw 2 cards and gain 1 Fuel.",          limitTurns:4 },
-  { id:55, name:"Armored Spearhead",   rarity:"Common", type:"mission", cost:1, ap:2, req:"Have 2 or more friendly Tanks on the board at the same time.",                        reward:"Your next Tank costs 2 less Fuel.",      limitTurns:3 },
-  { id:56, name:"Total Air Superiority",rarity:"Common", type:"mission", cost:1, ap:2, req:"Destroy an enemy unit with a friendly Aircraft.",                                    reward:"Deal 2 HQ damage.",                      limitTurns:4 },
-  { id:57, name:"Fortify the Line",    rarity:"Common", type:"mission", cost:1, ap:1, req:"Control 2+ objectives at end of your turn.",                                           reward:"Remove Suppression from 1 friendly unit and give it Armor.", limitTurns:5 },
-  { id:58, name:"Encirclement",        rarity:"Common", type:"mission", cost:1, ap:1, req:"A friendly unit is adjacent to 1 enemy unit on 2+ sides simultaneously.",              reward:"Deal 1 hit to that enemy unit.",         limitTurns:4 },
-  { id:81, name:"Total Onslaught",     rarity:"Common", type:"mission", cost:1, ap:2, req:"Destroy 3 enemy units since this mission was played.",                                  reward:"Deal 2 HQ damage.",                      limitTurns:6 },
-  { id:84, name:"Overwhelming Force",  rarity:"Common", type:"mission", cost:1, ap:2, req:"Destroy an enemy unit with a friendly Heavy Armor unit.",                              reward:"Deal 2 HQ damage.",                      limitTurns:5 },
+  { id:23, name:"Hold the Line",       rarity:"Common", type:"mission", cost:0, ap:0, req:"Control all objectives at end of your turn.",                                          reward:"Heal 5 HQ HP." },
+  { id:24, name:"Deep Strike",         rarity:"Common", type:"mission", cost:1, ap:2, req:"Have a friendly unit adjacent to 2+ enemy units simultaneously.",                      reward:"Deal 2 HQ damage." },
+  { id:25, name:"Blitz Assault",       rarity:"Common", type:"mission", cost:0, ap:0, req:"Destroy 2 enemy units in a single turn.",                                              reward:"Draw 2 cards and gain 1 Fuel." },
+  { id:55, name:"Armored Spearhead",   rarity:"Common", type:"mission", cost:1, ap:2, req:"Have 2 or more friendly Tanks on the board at the same time.",                        reward:"Your next Tank costs 2 less Fuel." },
+  { id:56, name:"Total Air Superiority",rarity:"Common", type:"mission", cost:1, ap:2, req:"Destroy an enemy unit with a friendly Aircraft.",                                    reward:"Deal 2 HQ damage." },
+  { id:57, name:"Fortify the Line",    rarity:"Common", type:"mission", cost:1, ap:1, req:"Control 2+ objectives at end of your turn.",                                           reward:"Remove Suppression from 1 friendly unit and give it Armor." },
+  { id:58, name:"Encirclement",        rarity:"Common", type:"mission", cost:1, ap:1, req:"A friendly unit is adjacent to 1 enemy unit on 2+ sides simultaneously.",              reward:"Deal 1 hit to that enemy unit." },
+  { id:81, name:"Total Onslaught",     rarity:"Common", type:"mission", cost:1, ap:2, req:"Destroy 3 enemy units since this mission was played.",                                  reward:"Deal 2 HQ damage." },
+  { id:84, name:"Overwhelming Force",  rarity:"Common", type:"mission", cost:1, ap:2, req:"Destroy an enemy unit with a friendly Heavy Armor unit.",                              reward:"Deal 2 HQ damage." },
 
   // ── OBJECTIVES ─────────────────────────────────────────────────────────
   { id:26, name:"Factory",             type:"objective", category:"Economy/Vehicle",  l1:"Gain 1 Fuel.",                                         l2:"Gain 1 Fuel. Next Tank costs 1 less.",              l3:"Gain 2 Fuel. Tanks +1 all sides.",                    l4:"Gain 2 Fuel. Tanks +2 all sides. Deal 2 HQ damage." },

@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS } from './cards.js?v=1783510212';
+import { CARD_BY_ID, CARDS } from './cards.js?v=1783511002';
 import {
   createInitialState,
   startOfTurn,
@@ -13,12 +13,12 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783510212';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783510212';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783510212';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783510212';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783510212';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783510212';
+} from './state.js?v=1783511002';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783511002';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783511002';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783511002';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783511002';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783511002';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -1184,11 +1184,10 @@ function playMissionCard(cardId) {
 
   const newMission = {
     cardId,
-    turnsRemaining: card.limitTurns || 5,
     ...(cardId === 81 ? { killsAtDeploy: s[active].totalKills ?? 0 } : {}),
   };
   s = { ...s, [active]: { ...s[active], missions: [...s[active].missions, newMission] } };
-  log.push(`${card.name}: mission active (${newMission.turnsRemaining} turns)`);
+  log.push(`${card.name}: mission active`);
   const { state: afterCheck, log: checkLog } = checkActiveMissions(s, active, {});
   s = afterCheck;
   log.push(...checkLog);
@@ -1518,23 +1517,14 @@ function getMissionCounter(s, role, mission) {
   }
 }
 
-function renderMissionsPanel(s) {
-  const panel = document.getElementById('missions-side');
-  if (!panel) return;
-  const role = myRole ?? s.initiative;
-  const missions = s[role]?.missions ?? [];
-  if (missions.length === 0) {
-    panel.innerHTML = '<div class="missions-empty">No active<br>missions</div>';
-    return;
-  }
-  panel.innerHTML = missions.map(m => {
+function renderMissionsForPlayer(s, role) {
+  return (s[role]?.missions ?? []).map(m => {
     const card = CARD_BY_ID[m.cardId];
     if (!card) return '';
     const counter = getMissionCounter(s, role, m);
-    const turns = m.turnsRemaining;
-    return `<div class="mission-detail">
+    return `<div class="mission-detail ${role}">
+      <div class="md-player-badge ${role}">${role.toUpperCase()}</div>
       <div class="md-name">${card.name}</div>
-      <div class="md-turns">${turns} turn${turns !== 1 ? 's' : ''} remaining</div>
       ${counter ? `<div class="md-counter">${counter}</div>` : ''}
       <div class="md-label">CONDITION</div>
       <div class="md-req">${card.req || '—'}</div>
@@ -1542,6 +1532,16 @@ function renderMissionsPanel(s) {
       <div class="md-reward">${card.reward || card.effect || '—'}</div>
     </div>`;
   }).join('');
+}
+
+// Shows BOTH players' active missions at once (missions aren't hidden information in this
+// design — unlike hand cards), each tagged with a player-colored badge + left border so they
+// stay visually distinguishable in one shared list.
+function renderMissionsPanel(s) {
+  const panel = document.getElementById('missions-side');
+  if (!panel) return;
+  const html = renderMissionsForPlayer(s, 'p1') + renderMissionsForPlayer(s, 'p2');
+  panel.innerHTML = html || '<div class="missions-empty">No active<br>missions</div>';
 }
 
 // Hand hover → card preview

@@ -26,7 +26,8 @@
 //   tempFuelDiscount: number,   — discount on next card of matching class
 // }
 //
-// ActiveMission: { cardId, turnsRemaining, progress }
+// ActiveMission: { cardId, killsAtDeploy? } — no turn limit; stays active until its reward fires.
+// killsAtDeploy is only set for Total Onslaught (81), to track kills since THIS copy was played.
 //
 // BoardUnit: {
 //   cardId: number,
@@ -43,7 +44,7 @@
 //   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1783510212';
+import { CARD_BY_ID } from './cards.js?v=1783511002';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
@@ -87,7 +88,8 @@ function createPlayerState(deckCardIds) {
 
 // Active player gains 3 fuel, capped at 6, then pendingFuelGain (Industrial Surge) on top of that,
 // uncapped — may push Fuel past 6 for this turn only. Resets pendingFuelGain to 0.
-// Decrements mission turnsRemaining, removes expired missions.
+// Missions have no turn limit — they stay active until their reward condition fires
+// (checkActiveMissions removes them at that point, not here).
 // Clears grantedKeywords from all units owned by the active player.
 export function startOfTurn(state) {
   const activePlayer = state.initiative;
@@ -95,9 +97,6 @@ export function startOfTurn(state) {
   ps = gainFuel(ps, 3); // base per-turn gain, capped at 6 as normal
   ps = gainFuel(ps, ps.pendingFuelGain, false); // Industrial Surge — may exceed the storage cap this turn
   ps.pendingFuelGain = 0;
-  ps.missions = ps.missions
-    .map(m => ({ ...m, turnsRemaining: m.turnsRemaining - 1 }))
-    .filter(m => m.turnsRemaining > 0);
 
   // Clear per-turn grants and obj bonus for the active player's units before objective effects re-apply.
   // grantedSideBonus (Rally Cry) uses its own counter so it can outlast a single turn (see sideBonusTurns).
