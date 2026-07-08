@@ -1,5 +1,5 @@
-import { CARD_BY_ID } from './cards.js?v=1783503737';
-import { getSideValue, getKeywords, attackBeats, applyHit, oppositeDir } from './state.js?v=1783503737';
+import { CARD_BY_ID } from './cards.js?v=1783503888';
+import { getSideValue, getKeywords, attackBeats, applyHit, oppositeDir } from './state.js?v=1783503888';
 
 // Orthogonal directions and their row/col offsets.
 const DIRS = ["n", "e", "s", "w"];

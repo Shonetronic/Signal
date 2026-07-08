@@ -1,4 +1,4 @@
-import { CARD_BY_ID } from './cards.js?v=1783503737';
+import { CARD_BY_ID } from './cards.js?v=1783503888';
 import {
   createInitialState,
   startOfTurn,
@@ -13,11 +13,12 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783503737';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783503737';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783503737';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783503737';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783503737';
+} from './state.js?v=1783503888';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783503888';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783503888';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783503888';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783503888';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783503888';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -1686,3 +1687,26 @@ document.getElementById('fo-confirm').addEventListener('click', confirmFO);
     btn.textContent = next === 'light' ? '☀ DARK' : '☾ LIGHT';
   });
 })();
+
+// ── Debug Panel ──────────────────────────────────────────────────────────────
+let debugTargetPlayer = 'p1';
+let debugSelectingUnit = false;
+let debugSelectedUnitKey = null;
+
+document.getElementById('debug-toggle').addEventListener('click', () => {
+  const panel = document.getElementById('debug-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+});
+
+document.getElementById('debug-close').addEventListener('click', () => {
+  document.getElementById('debug-panel').style.display = 'none';
+});
+
+document.getElementById('debug-player-p1').addEventListener('click', () => setDebugPlayer('p1'));
+document.getElementById('debug-player-p2').addEventListener('click', () => setDebugPlayer('p2'));
+
+function setDebugPlayer(player) {
+  debugTargetPlayer = player;
+  document.getElementById('debug-player-p1').classList.toggle('active', player === 'p1');
+  document.getElementById('debug-player-p2').classList.toggle('active', player === 'p2');
+}
