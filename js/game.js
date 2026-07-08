@@ -1,4 +1,4 @@
-import { CARD_BY_ID } from './cards.js?v=1783503888';
+import { CARD_BY_ID, CARDS } from './cards.js?v=1783504119';
 import {
   createInitialState,
   startOfTurn,
@@ -13,12 +13,12 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783503888';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783503888';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783503888';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783503888';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783503888';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783503888';
+} from './state.js?v=1783504119';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783504119';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783504119';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783504119';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783504119';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783504119';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -1710,3 +1710,24 @@ function setDebugPlayer(player) {
   document.getElementById('debug-player-p1').classList.toggle('active', player === 'p1');
   document.getElementById('debug-player-p2').classList.toggle('active', player === 'p2');
 }
+
+document.getElementById('debug-card-search').addEventListener('input', e => {
+  const query = e.target.value.trim().toLowerCase();
+  const results = document.getElementById('debug-card-results');
+  results.innerHTML = '';
+  if (!query) return;
+  const matches = CARDS.filter(c => c.name.toLowerCase().includes(query)).slice(0, 8);
+  for (const card of matches) {
+    const el = document.createElement('div');
+    el.className = 'debug-card-result';
+    el.textContent = `${card.name} (${card.id}) — ${card.cls || card.type}`;
+    el.addEventListener('click', () => {
+      if (!state) return;
+      const { state: newState, log } = debugAddCard(state, debugTargetPlayer, card.id);
+      commitState(newState, log);
+      document.getElementById('debug-card-search').value = '';
+      results.innerHTML = '';
+    });
+    results.appendChild(el);
+  }
+});
