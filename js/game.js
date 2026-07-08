@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS } from './cards.js?v=1783504604';
+import { CARD_BY_ID, CARDS } from './cards.js?v=1783504771';
 import {
   createInitialState,
   startOfTurn,
@@ -13,12 +13,12 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783504604';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783504604';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783504604';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783504604';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783504604';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783504604';
+} from './state.js?v=1783504771';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783504771';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783504771';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783504771';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783504771';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783504771';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -391,6 +391,8 @@ function redraw() {
     endTurnBtn.disabled = false;
     endTurnBtn.textContent = `End ${state.initiative.toUpperCase()} Turn`;
   }
+
+  populateDebugObjectiveDropdown();
 }
 
 // Artillery Position L2/L4 hits are stored on state.pendingArtyHits (synced via Firebase) instead of
@@ -1764,4 +1766,29 @@ document.querySelectorAll('[data-hq-delta]').forEach(btn => {
     commitState(newState, log);
     checkWin();
   });
+});
+
+function populateDebugObjectiveDropdown() {
+  if (!state) return;
+  const select = document.getElementById('debug-obj-select');
+  const prevValue = select.value;
+  select.innerHTML = '';
+  for (const [key, obj] of Object.entries(state.objectives)) {
+    const name = CARD_BY_ID[obj.cardId]?.name ?? '?';
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = `${name} (${key})`;
+    select.appendChild(opt);
+  }
+  if ([...select.options].some(o => o.value === prevValue)) select.value = prevValue;
+}
+
+document.getElementById('debug-obj-apply').addEventListener('click', () => {
+  if (!state) return;
+  const tileKey = document.getElementById('debug-obj-select').value;
+  if (!tileKey) return;
+  const controller = document.getElementById('debug-obj-controller').value;
+  const level = Number(document.getElementById('debug-obj-level').value);
+  const { state: newState, log } = debugSetObjective(state, tileKey, controller, level);
+  commitState(newState, log);
 });
