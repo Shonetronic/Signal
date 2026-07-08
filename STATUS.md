@@ -23,6 +23,7 @@ Legend: ✅ done | ⚠️ partial | ❌ missing
 | P2 board flip + direction | ✅ | P2 sees board from their side; engine and display both correct |
 | Card preview on hover | ✅ | Hovering board tile with unit shows card ability text |
 | Deck builder | ❌ | 4 hardcoded starter decks only |
+| Debug panel | ✅ | Add card to hand, set/adjust Fuel (uncapped) and HQ, force objective control/level, force unit Suppress/Destroy/Reset, draw cards, skip to turn. Syncs online via the normal commitState/Firebase path. |
 | GitHub Pages deploy | ✅ | Live at github.com/Shonetronic/Signal |
 
 ---

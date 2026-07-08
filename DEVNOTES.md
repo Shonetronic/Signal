@@ -155,3 +155,4 @@ See `CLAUDE.md` section "Digital prototype — implementation status" for the fu
 - Missions: full system is live, including Factory L2 Tank discount and Forward Observer's deck-order modal
 - Deck builder: currently 4 hardcoded starter decks
 - GitHub Pages deploy: live, no local server needed
+- Debug panel (`js/debug.js` + wiring in `js/game.js`) is live — see `specs/2026-07-08-debug-panel-design.md` for full scope.
