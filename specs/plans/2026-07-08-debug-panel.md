@@ -383,7 +383,7 @@ In `digital/game.html`, after line 112 (`  </div>` closing `#end-screen`) and be
 
 - [ ] **Step 2: Verify the markup is well-formed**
 
-Run: `node -e "require('fs').readFileSync('digital/game.html', 'utf8')" ` — this just confirms the file is still readable/no corruption from the edit. Then open `digital/game.html` in a text editor and confirm every opened `<div>` has a matching `</div>` for the inserted block (11 `.debug-section` divs, each opened and closed).
+Run: `node -e "require('fs').readFileSync('digital/game.html', 'utf8')" ` — this just confirms the file is still readable/no corruption from the edit. Then open `digital/game.html` in a text editor and confirm every opened `<div>` has a matching `</div>` for the inserted block (7 `.debug-section` divs: Add Card, Fuel, HQ Health, Objective Control/Level, Unit State, Draw Cards, Skip to Turn — each opened and closed).
 
 - [ ] **Step 3: Commit**
 
