@@ -1,6 +1,6 @@
-import { CARD_BY_ID } from './cards.js?v=1783507473';
-import { getKeywords, maxArmorHits } from './state.js?v=1783507473';
-import { getTerrain } from './maps.js?v=1783507473';
+import { CARD_BY_ID } from './cards.js?v=1783507837';
+import { getKeywords, maxArmorHits } from './state.js?v=1783507837';
+import { getTerrain } from './maps.js?v=1783507837';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
