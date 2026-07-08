@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS } from './cards.js?v=1783504771';
+import { CARD_BY_ID, CARDS } from './cards.js?v=1783505996';
 import {
   createInitialState,
   startOfTurn,
@@ -13,12 +13,12 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783504771';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783504771';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783504771';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783504771';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783504771';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783504771';
+} from './state.js?v=1783505996';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783505996';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783505996';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783505996';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783505996';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783505996';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -552,10 +552,24 @@ document.getElementById('p1-hand').addEventListener('click', e => {
 
 document.getElementById('board').addEventListener('click', e => {
   if (gameOver || !state) return;
-  if (isOnline && state.initiative !== myRole) return;
   const tile = e.target.closest('.tile');
   if (!tile) return;
   const clickedKey = tile.dataset.key;
+
+  // DEBUG UNIT SELECTION — takes priority over every other board-click mode, and
+  // deliberately does not check the isOnline turn-gate below (the debug panel must be
+  // able to select and edit either player's units regardless of whose turn it is).
+  if (debugSelectingUnit) {
+    const unit = state.board[clickedKey];
+    if (!unit) return;
+    debugSelectedUnitKey = clickedKey;
+    debugSelectingUnit = false;
+    const name = CARD_BY_ID[unit.cardId]?.name ?? '?';
+    document.getElementById('debug-unit-hint').textContent = `Selected: ${name} at ${clickedKey}`;
+    return;
+  }
+
+  if (isOnline && state.initiative !== myRole) return;
 
   // ARTILLERY POSITION TARGETING
   if (uiState === 'arty-targeting') {
@@ -1792,3 +1806,27 @@ document.getElementById('debug-obj-apply').addEventListener('click', () => {
   const { state: newState, log } = debugSetObjective(state, tileKey, controller, level);
   commitState(newState, log);
 });
+
+document.getElementById('debug-unit-select-btn').addEventListener('click', () => {
+  debugSelectingUnit = true;
+  debugSelectedUnitKey = null;
+  document.getElementById('debug-unit-hint').textContent = 'Click a unit on the board now…';
+});
+
+function applyDebugUnitState(newUnitState) {
+  if (!state || !debugSelectedUnitKey) {
+    appendLog(['[DEBUG] No unit selected — click "Select Unit" first.']);
+    return;
+  }
+  const { state: newState, log } = debugSetUnitState(state, debugSelectedUnitKey, newUnitState);
+  commitState(newState, log);
+  if (newUnitState === 'destroyed') {
+    debugSelectedUnitKey = null;
+    document.getElementById('debug-unit-hint').textContent = 'Click "Select Unit", then click a unit on the board.';
+  }
+  checkWin();
+}
+
+document.getElementById('debug-unit-suppress').addEventListener('click', () => applyDebugUnitState('suppressed'));
+document.getElementById('debug-unit-destroy').addEventListener('click', () => applyDebugUnitState('destroyed'));
+document.getElementById('debug-unit-reset').addEventListener('click', () => applyDebugUnitState('normal'));
