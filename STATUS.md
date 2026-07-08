@@ -23,7 +23,7 @@ Legend: ✅ done | ⚠️ partial | ❌ missing
 | P2 board flip + direction | ✅ | P2 sees board from their side; engine and display both correct |
 | Card preview on hover | ✅ | Hovering board tile with unit shows card ability text |
 | Deck builder | ❌ | 4 hardcoded starter decks only |
-| Debug panel | ✅ | Add card to hand, set/adjust Fuel (uncapped) and HQ, force objective control/level, force unit Suppress/Destroy/Reset, draw cards, skip to turn. Syncs online via the normal commitState/Firebase path. |
+| Debug panel | ✅ | Add card to hand, set/adjust Fuel (uncapped) and HQ, force objective control/level, force unit Suppress/Destroy/Reset, buff a unit's all-sides stats, draw cards, skip to turn. Syncs online via the normal commitState/Firebase path. |
 | GitHub Pages deploy | ✅ | Live at github.com/Shonetronic/Signal |
 
 ---
@@ -87,12 +87,14 @@ Legend: ✅ done | ⚠️ partial | ❌ missing
 
 ## Missions (9 in current card list)
 
+No turn limit — a mission stays active until its reward condition fires. Missions panel shows both players' active missions at once, each tagged with a P1/P2 color badge.
+
 | Card | ID | Status | Notes |
 |---|---|---|---|
 | Hold the Line | 23 | ✅ | Control all objectives at end of turn → +5 HQ |
 | Deep Strike | 24 | ✅ | Friendly adjacent to 2+ enemies → 2 HQ damage |
 | Blitz Assault | 25 | ✅ | 2+ kills this turn → draw 2 + 1 Fuel |
-| Armored Spearhead | 55 | ✅ | 2+ friendly Tanks on board simultaneously → next Tank costs 2 less Fuel. Limit 3 turns. |
+| Armored Spearhead | 55 | ✅ | 2+ friendly Tanks on board simultaneously → next Tank costs 2 less Fuel. |
 | Total Air Superiority | 56 | ✅ | Kill with Aircraft → 2 HQ damage |
 | Fortify the Line | 57 | ✅ | Control 2+ objectives at end of turn → un-suppress 1 unit + Armor |
 | Encirclement | 58 | ✅ | Enemy surrounded on 2+ sides → 1 hit to that enemy |
