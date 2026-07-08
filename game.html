@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>SIGNAL — Digital Prototype</title>
-  <link rel="stylesheet" href="css/game.css?v=1783503360">
+  <link rel="stylesheet" href="css/game.css?v=1783503454">
 </head>
 <body>
 
@@ -111,6 +111,108 @@
     </div>
   </div>
 
+  <!-- ── DEBUG PANEL ── -->
+  <button class="debug-toggle" id="debug-toggle">⚙ DEBUG</button>
+  <div class="debug-panel" id="debug-panel" style="display:none">
+    <div class="debug-panel-header">
+      <span class="title">DEBUG PANEL</span>
+      <button class="debug-close" id="debug-close">✕</button>
+    </div>
+
+    <div class="debug-player-select">
+      <button class="debug-player-btn active" id="debug-player-p1" data-player="p1">TARGET: P1</button>
+      <button class="debug-player-btn" id="debug-player-p2" data-player="p2">TARGET: P2</button>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title">Add Card to Hand</div>
+      <div class="debug-row">
+        <input class="debug-input" id="debug-card-search" placeholder="Search card name…">
+      </div>
+      <div id="debug-card-results"></div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title">Fuel</div>
+      <div class="debug-row">
+        <input class="debug-input" type="number" id="debug-fuel-value" style="flex:0 0 60px;">
+        <button class="debug-btn" id="debug-fuel-set">Set</button>
+        <div class="debug-btn-row" style="margin-left:auto;">
+          <button class="debug-btn small secondary" data-fuel-delta="-5">−5</button>
+          <button class="debug-btn small secondary" data-fuel-delta="-1">−1</button>
+          <button class="debug-btn small secondary" data-fuel-delta="1">+1</button>
+          <button class="debug-btn small secondary" data-fuel-delta="5">+5</button>
+        </div>
+      </div>
+      <div class="debug-hint">Uncapped — can exceed the normal 6 Fuel limit.</div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title">HQ Health</div>
+      <div class="debug-row">
+        <input class="debug-input" type="number" id="debug-hq-value" style="flex:0 0 60px;">
+        <button class="debug-btn" id="debug-hq-set">Set</button>
+        <div class="debug-btn-row" style="margin-left:auto;">
+          <button class="debug-btn small secondary" data-hq-delta="-5">−5</button>
+          <button class="debug-btn small secondary" data-hq-delta="-1">−1</button>
+          <button class="debug-btn small secondary" data-hq-delta="1">+1</button>
+          <button class="debug-btn small secondary" data-hq-delta="5">+5</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title">Objective Control / Level</div>
+      <div class="debug-row">
+        <select class="debug-input" id="debug-obj-select"></select>
+      </div>
+      <div class="debug-row">
+        <select class="debug-input" id="debug-obj-controller" style="flex:0 0 90px;">
+          <option value="p1">P1</option>
+          <option value="p2">P2</option>
+          <option value="neutral">Neutral</option>
+        </select>
+        <select class="debug-input" id="debug-obj-level" style="flex:0 0 70px;">
+          <option value="1">L1</option>
+          <option value="2">L2</option>
+          <option value="3">L3</option>
+          <option value="4">L4</option>
+        </select>
+        <button class="debug-btn" id="debug-obj-apply">Apply</button>
+      </div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title">Unit State</div>
+      <div class="debug-hint" id="debug-unit-hint" style="margin-top:0; margin-bottom:6px;">Click "Select Unit", then click a unit on the board.</div>
+      <div class="debug-btn-row" style="margin-bottom:6px;">
+        <button class="debug-btn secondary" id="debug-unit-select-btn" style="flex:1;">Select Unit</button>
+      </div>
+      <div class="debug-btn-row">
+        <button class="debug-btn secondary" id="debug-unit-suppress" style="flex:1;">Suppress</button>
+        <button class="debug-btn secondary" id="debug-unit-destroy" style="flex:1;">Destroy</button>
+        <button class="debug-btn secondary" id="debug-unit-reset" style="flex:1;">Reset</button>
+      </div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title">Draw Cards</div>
+      <div class="debug-row">
+        <input class="debug-input" type="number" id="debug-draw-count" value="1" style="flex:0 0 60px;">
+        <button class="debug-btn" id="debug-draw-go">Draw</button>
+      </div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title">Skip to Turn</div>
+      <div class="debug-row">
+        <input class="debug-input" type="number" id="debug-turn-value" style="flex:0 0 60px;">
+        <button class="debug-btn" id="debug-turn-go">Jump</button>
+      </div>
+      <div class="debug-hint">Recalculates objective levels/control for that turn. Does not simulate Fuel/draws/mission timers for turns in between.</div>
+    </div>
+  </div>
+
   <!-- ── GAME AREA ── -->
   <div id="game-area" class="game-layout" style="display:none">
 
@@ -187,7 +289,7 @@
 
   </div>
 
-  <script type="module" src="./js/game.js?v=1783503360"></script>
+  <script type="module" src="./js/game.js?v=1783503454"></script>
 
 </body>
 </html>
