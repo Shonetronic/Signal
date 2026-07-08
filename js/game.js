@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS } from './cards.js?v=1783504119';
+import { CARD_BY_ID, CARDS } from './cards.js?v=1783504285';
 import {
   createInitialState,
   startOfTurn,
@@ -13,12 +13,12 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783504119';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783504119';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783504119';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783504119';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783504119';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783504119';
+} from './state.js?v=1783504285';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783504285';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783504285';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783504285';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783504285';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783504285';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -1730,4 +1730,20 @@ document.getElementById('debug-card-search').addEventListener('input', e => {
     });
     results.appendChild(el);
   }
+});
+
+document.getElementById('debug-fuel-set').addEventListener('click', () => {
+  if (!state) return;
+  const value = Number(document.getElementById('debug-fuel-value').value);
+  const { state: newState, log } = debugSetFuel(state, debugTargetPlayer, value);
+  commitState(newState, log);
+});
+
+document.querySelectorAll('[data-fuel-delta]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!state) return;
+    const delta = Number(btn.dataset.fuelDelta);
+    const { state: newState, log } = debugAdjustFuel(state, debugTargetPlayer, delta);
+    commitState(newState, log);
+  });
 });
