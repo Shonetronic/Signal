@@ -1,6 +1,6 @@
-import { CARD_BY_ID } from './cards.js?v=1783508009';
-import { getKeywords, maxArmorHits } from './state.js?v=1783508009';
-import { getTerrain } from './maps.js?v=1783508009';
+import { CARD_BY_ID } from './cards.js?v=1783509913';
+import { getKeywords, maxArmorHits } from './state.js?v=1783509913';
+import { getTerrain } from './maps.js?v=1783509913';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
@@ -109,7 +109,7 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
 function buildBoardCard(unit, viewer = 'p1') {
   const card = CARD_BY_ID[unit.cardId];
   const el = document.createElement('div');
-  const buffed = unit.tempSideBonus > 0 || (unit.tempKeywords?.length > 0) || (unit.grantedKeywords?.length > 0);
+  const buffed = unit.tempSideBonus > 0 || unit.grantedSideBonus > 0 || (unit.tempKeywords?.length > 0) || (unit.grantedKeywords?.length > 0);
   const opponent = unit.owner !== viewer;
   el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${opponent ? ' opponent-card' : ''}`;
 
@@ -118,7 +118,7 @@ function buildBoardCard(unit, viewer = 'p1') {
   const abilityHtml = card.ability
     ? `<span class="bc-ability-pip">⚡<span class="bc-ability-tip">${card.ability}</span></span>`
     : '';
-  const bonus = (unit.tempSideBonus || 0) + (unit.objSideBonus || 0);
+  const bonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.objSideBonus || 0);
   const objBonus = unit.objSideBonus || 0;
   const maxArmor = maxArmorHits(unit);
   const remaining = maxArmor - unit.armorHits;
