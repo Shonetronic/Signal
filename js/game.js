@@ -1,4 +1,4 @@
-import { CARD_BY_ID } from './cards.js?v=1783427428';
+import { CARD_BY_ID } from './cards.js?v=1783502012';
 import {
   createInitialState,
   startOfTurn,
@@ -13,11 +13,11 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783427428';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783427428';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783427428';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783427428';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783427428';
+} from './state.js?v=1783502012';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783502012';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783502012';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783502012';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783502012';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
