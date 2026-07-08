@@ -125,12 +125,14 @@ function baseState() {
 }
 
 // debugSkipToTurn — sets turn, recalculates objective level for that turn
+// objectiveLevel(turn) in state.js computes round = Math.ceil(turn/2) and escalates to level 4
+// once round >= 8 — so turn 15 (round 8), not turn 9 (round 5, level 2), is what reaches L4.
 {
   const s = baseState();
-  const { state, log } = debugSkipToTurn(s, 9); // turn 9 → objectiveLevel should be 4 (turn 8+)
-  assert.equal(state.turn, 9);
+  const { state, log } = debugSkipToTurn(s, 15);
+  assert.equal(state.turn, 15);
   assert.equal(state.objectives['1,0'].level, 4);
-  assert.match(log[0], /Round 5/); // Math.ceil(9/2) = 5
+  assert.match(log[0], /Round 8/); // Math.ceil(15/2) = 8
 }
 
 console.log('All debug.js tests passed.');
