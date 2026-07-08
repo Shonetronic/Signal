@@ -51,6 +51,20 @@ export function debugSetUnitState(state, tileKey, newUnitState) {
   return { state: newState, log: [`[DEBUG] ${name} set to ${newUnitState}`] };
 }
 
+// Persistent all-sides stat override — distinct from tempSideBonus/objSideBonus/grantedSideBonus,
+// which all get cleared or recalculated by normal turn logic. A debug buff should stay put until
+// the tester changes it back, so it lives in its own field (debugSideBonus, read by getSideValue
+// in state.js and by buildBoardCard in ui.js).
+export function debugBuffUnit(state, tileKey, value) {
+  const unit = state.board[tileKey];
+  if (!unit) return { state, log: [] };
+  const updated = { ...unit, debugSideBonus: value };
+  const newState = { ...state, board: { ...state.board, [tileKey]: updated } };
+  const name = CARD_BY_ID[unit.cardId]?.name ?? '?';
+  const sign = value >= 0 ? '+' : '';
+  return { state: newState, log: [`[DEBUG] ${name} all sides ${sign}${value}`] };
+}
+
 export function debugDrawCards(state, player, n) {
   const newPs = drawCards(state[player], n);
   const newState = { ...state, [player]: newPs };

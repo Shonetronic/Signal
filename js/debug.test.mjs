@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { CARD_BY_ID } from './cards.js';
 import {
   debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ,
-  debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn,
+  debugSetObjective, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn,
 } from './debug.js';
 
 function baseState() {
@@ -112,6 +112,32 @@ function baseState() {
   const s = baseState();
   const { state, log } = debugSetUnitState(s, '0,1', 'suppressed');
   assert.equal(state, s); // same reference, nothing changed
+  assert.deepEqual(log, []);
+}
+
+// debugBuffUnit — sets an all-sides bonus, positive or negative
+{
+  const s = baseState();
+  const { state, log } = debugBuffUnit(s, '0,0', 3);
+  assert.equal(state.board['0,0'].debugSideBonus, 3);
+  assert.match(log[0], /Heavy Tank/);
+  assert.match(log[0], /\+3/);
+}
+
+// debugBuffUnit — negative value, and re-applying overwrites rather than stacking
+{
+  const s = baseState();
+  s.board['0,0'].debugSideBonus = 5;
+  const { state, log } = debugBuffUnit(s, '0,0', -2);
+  assert.equal(state.board['0,0'].debugSideBonus, -2);
+  assert.match(log[0], /-2/);
+}
+
+// debugBuffUnit — clicking an empty tile is a no-op
+{
+  const s = baseState();
+  const { state, log } = debugBuffUnit(s, '0,1', 5);
+  assert.equal(state, s);
   assert.deepEqual(log, []);
 }
 

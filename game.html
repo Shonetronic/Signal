@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>SIGNAL — Digital Prototype</title>
-  <link rel="stylesheet" href="css/game.css?v=1783509946">
+  <link rel="stylesheet" href="css/game.css?v=1783510212">
 </head>
 <body>
 
@@ -188,11 +188,16 @@
       <div class="debug-btn-row" style="margin-bottom:6px;">
         <button class="debug-btn secondary" id="debug-unit-select-btn" style="flex:1;">Select Unit</button>
       </div>
-      <div class="debug-btn-row">
+      <div class="debug-btn-row" style="margin-bottom:6px;">
         <button class="debug-btn secondary" id="debug-unit-suppress" style="flex:1;">Suppress</button>
         <button class="debug-btn secondary" id="debug-unit-destroy" style="flex:1;">Destroy</button>
         <button class="debug-btn secondary" id="debug-unit-reset" style="flex:1;">Reset</button>
       </div>
+      <div class="debug-row">
+        <input class="debug-input" type="number" id="debug-unit-buff-value" placeholder="±N all sides" style="flex:0 0 100px;">
+        <button class="debug-btn" id="debug-unit-buff-apply">Buff</button>
+      </div>
+      <div class="debug-hint">Uses the unit selected above. All-sides bonus (can be negative), persists until you set it back to 0 or the unit is Destroyed. Independent of Suppress/Reset.</div>
     </div>
 
     <div class="debug-section">
@@ -289,7 +294,7 @@
 
   </div>
 
-  <script type="module" src="./js/game.js?v=1783509946"></script>
+  <script type="module" src="./js/game.js?v=1783510212"></script>
 
 </body>
 </html>

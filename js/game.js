@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS } from './cards.js?v=1783509946';
+import { CARD_BY_ID, CARDS } from './cards.js?v=1783510212';
 import {
   createInitialState,
   startOfTurn,
@@ -13,12 +13,12 @@ import {
   getSideValue,
   attackBeats,
   oppositeDir,
-} from './state.js?v=1783509946';
-import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783509946';
-import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783509946';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783509946';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783509946';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783509946';
+} from './state.js?v=1783510212';
+import { getAttackableTargets, resolveSingleAttack, tileKey } from './combat.js?v=1783510212';
+import { renderBoard, renderHand, renderHQ, appendLog } from './ui.js?v=1783510212';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1783510212';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1783510212';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn } from './debug.js?v=1783510212';
 
 // ── Starter decks ─────────────────────────────────────────────────────────────
 const DECKS = {
@@ -327,6 +327,9 @@ function applyMutations(board, mutations) {
 
 function redraw() {
   if (!state) return;
+  // Debug/testing hook only — read-only snapshot for external tooling (e.g. selfplay bot).
+  // No gameplay effect: nothing reads this back into game state.
+  window.__SIGNAL_DEBUG__ = { state, uiState, selectedHandCardId, pendingAttackerKey, attackedThisTurn: [...attackedThisTurn.entries()] };
   renderHQ(state);
 
   if (uiState === "placing") {
@@ -1830,6 +1833,16 @@ function applyDebugUnitState(newUnitState) {
 document.getElementById('debug-unit-suppress').addEventListener('click', () => applyDebugUnitState('suppressed'));
 document.getElementById('debug-unit-destroy').addEventListener('click', () => applyDebugUnitState('destroyed'));
 document.getElementById('debug-unit-reset').addEventListener('click', () => applyDebugUnitState('normal'));
+
+document.getElementById('debug-unit-buff-apply').addEventListener('click', () => {
+  if (!state || !debugSelectedUnitKey) {
+    appendLog(['[DEBUG] No unit selected — click "Select Unit" first.']);
+    return;
+  }
+  const value = Number(document.getElementById('debug-unit-buff-value').value) || 0;
+  const { state: newState, log } = debugBuffUnit(state, debugSelectedUnitKey, value);
+  commitState(newState, log);
+});
 
 document.getElementById('debug-draw-go').addEventListener('click', () => {
   if (!state) return;

@@ -38,10 +38,12 @@
 //   tempSideBonus: number,      — +N to all sides this turn
 //   grantedSideBonus: number,   — +N to all sides from Rally Cry; lasts sideBonusTurns owner turn-starts
 //   sideBonusTurns: number,     — turn-starts remaining before grantedSideBonus clears (Rally Cry = 2)
+//   debugSideBonus: number,     — +/-N to all sides from the debug panel; persists until the tester
+//                                 changes it back to 0, NOT cleared by normal turn logic
 //   justPlaced: boolean,        — true only on the turn deployed; cleared by endTurn
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1783509946';
+import { CARD_BY_ID } from './cards.js?v=1783510212';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
@@ -187,14 +189,14 @@ export function gainFuel(playerState, amount, cap = true) {
 
 // ── Board unit helpers ───────────────────────────────────────────────────────
 
-// Returns card's base side value + tempSideBonus + objSideBonus.
+// Returns card's base side value + tempSideBonus + grantedSideBonus + objSideBonus + debugSideBonus.
 export function getSideValue(boardUnit, dir) {
   const card = CARD_BY_ID[boardUnit.cardId];
   if (!card || card.type !== "unit") return 0;
   // P2's card faces opposite direction — N is their front facing P1's side (actual South)
   const P2_FLIP = { n: 's', s: 'n', e: 'w', w: 'e' };
   const d = boardUnit.owner === 'p2' ? P2_FLIP[dir] : dir;
-  return card[d] + (boardUnit.tempSideBonus || 0) + (boardUnit.grantedSideBonus || 0) + (boardUnit.objSideBonus || 0);
+  return card[d] + (boardUnit.tempSideBonus || 0) + (boardUnit.grantedSideBonus || 0) + (boardUnit.objSideBonus || 0) + (boardUnit.debugSideBonus || 0);
 }
 
 // Returns card's base keyword(s) + tempKeywords + grantedKeywords.
