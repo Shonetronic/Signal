@@ -161,12 +161,14 @@ function baseState() {
 }
 
 // debugSkipToTurn — sets turn, recalculates objective level for that turn
+// objectiveLevel(turn) in state.js computes round = Math.ceil(turn/2) and escalates to level 4
+// once round >= 8 — so turn 15 (round 8), not turn 9 (round 5, level 2), is what reaches L4.
 {
   const s = baseState();
-  const { state, log } = debugSkipToTurn(s, 9); // turn 9 → objectiveLevel should be 4 (turn 8+)
-  assert.equal(state.turn, 9);
+  const { state, log } = debugSkipToTurn(s, 15);
+  assert.equal(state.turn, 15);
   assert.equal(state.objectives['1,0'].level, 4);
-  assert.match(log[0], /Round 5/); // Math.ceil(9/2) = 5
+  assert.match(log[0], /Round 8/); // Math.ceil(15/2) = 8
 }
 
 console.log('All debug.js tests passed.');
@@ -910,7 +912,7 @@ document.getElementById('debug-turn-go').addEventListener('click', () => {
 
 - [ ] **Step 2: Verify manually**
 
-Open the debug panel, set Skip to Turn to `9`, click Jump. The turn/round display should update to reflect turn 9 (Round 5). Any objective on the board should escalate to L4 (per `objectiveLevel`, turn 8+ is L4) — confirm its level badge updates. Confirm Fuel and hand size were NOT affected by the jump (per spec, this does not simulate the skipped turns).
+Open the debug panel, set Skip to Turn to `15`, click Jump. The turn/round display should update to reflect turn 15 (Round 8). Any objective on the board should escalate to L4 (`objectiveLevel` in `state.js` computes `round = Math.ceil(turn/2)` and escalates to L4 at round 8+, i.e. turn 15+) — confirm its level badge updates. Confirm Fuel and hand size were NOT affected by the jump (per spec, this does not simulate the skipped turns).
 
 - [ ] **Step 3: Commit**
 
