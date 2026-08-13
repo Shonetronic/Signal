@@ -66,16 +66,19 @@ export const CARDS = [
 
   // ── UNITS — v0.4 launch filler (2026-07-30, from Denis's Doc 03 handoff) ──
   // Abilities referencing "friendly Hero" are inert until Hero Phase logic exists (see cards.js header).
-  { id:111, name:"Radio Operator",       cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1, keyword:null,         n:4, e:3, s:3, w:2, ability:"On Play: If a friendly Hero is in this column, look at the top 2 cards of your deck. Put one on top and one on the bottom." },
-  { id:112, name:"Combat Engineers",     cls:"Infantry",  rarity:"Common", type:"unit", cost:2, ap:2, keyword:null,         n:5, e:4, s:4, w:2, ability:"On Play: If a friendly Hero is in this column, remove Suppression from another friendly Unit in this column." },
-  { id:113, name:"Recon Jeep",           cls:"Tank",      rarity:"Common", type:"unit", cost:1, ap:1, keyword:null,         n:6, e:4, s:2, w:1, ability:null },
-  { id:114, name:"Mobile Command Halftrack", cls:"Tank",  rarity:"Common", type:"unit", cost:3, ap:3, keyword:"Armor",      n:6, e:4, s:4, w:2, ability:"On Play: You may move a Hero into this column if its Hero Zone is empty." },
-  { id:115, name:"Liaison Aircraft",     cls:"Aircraft",  rarity:"Common", type:"unit", cost:1, ap:1, keyword:"Airborne",   n:4, e:3, s:2, w:2, ability:null },
-  { id:116, name:"Fighter-Bomber",       cls:"Aircraft",  rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Airborne",   n:7, e:6, s:5, w:3, ability:null },
-  { id:117, name:"Heavy Artillery Battery", cls:"Artillery", rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Bombard", n:8, e:3, s:7, w:3, ability:null },
-  { id:118, name:"Heavy Cruiser",        cls:"Naval",     rarity:"Common", type:"unit", cost:5, ap:5, keyword:"Heavy Armor", n:7, e:6, s:6, w:2, ability:null },
-  { id:119, name:"Veteran Signal Corps", cls:"Infantry",  rarity:"Rare",   type:"unit", cost:3, ap:3, keyword:null,         n:6, e:5, s:5, w:4, ability:"On Play: If you have activated Hero Powers from at least 2 different Heroes this match, draw 1 card." },
-  { id:120, name:"Strategic Bomber",     cls:"Aircraft",  rarity:"Rare",   type:"unit", cost:5, ap:5, keyword:"Bombard",    n:8, e:6, s:5, w:4, ability:"The first time this Unit destroys an enemy, draw 1 card." },
+  // retired:true on this whole block — CLIENT BUILD ONLY (origin-release branch): this batch
+  // hasn't been through balance testing yet, held back from the client-facing site pending that.
+  // Do not carry this flag back onto main/internal — full-set testing still uses these cards.
+  { id:111, name:"Radio Operator",       cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1, keyword:null,         n:4, e:3, s:3, w:2, ability:"On Play: If a friendly Hero is in this column, look at the top 2 cards of your deck. Put one on top and one on the bottom.", retired:true },
+  { id:112, name:"Combat Engineers",     cls:"Infantry",  rarity:"Common", type:"unit", cost:2, ap:2, keyword:null,         n:5, e:4, s:4, w:2, ability:"On Play: If a friendly Hero is in this column, remove Suppression from another friendly Unit in this column.", retired:true },
+  { id:113, name:"Recon Jeep",           cls:"Tank",      rarity:"Common", type:"unit", cost:1, ap:1, keyword:null,         n:6, e:4, s:2, w:1, ability:null, retired:true },
+  { id:114, name:"Mobile Command Halftrack", cls:"Tank",  rarity:"Common", type:"unit", cost:3, ap:3, keyword:"Armor",      n:6, e:4, s:4, w:2, ability:"On Play: You may move a Hero into this column if its Hero Zone is empty.", retired:true },
+  { id:115, name:"Liaison Aircraft",     cls:"Aircraft",  rarity:"Common", type:"unit", cost:1, ap:1, keyword:"Airborne",   n:4, e:3, s:2, w:2, ability:null, retired:true },
+  { id:116, name:"Fighter-Bomber",       cls:"Aircraft",  rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Airborne",   n:7, e:6, s:5, w:3, ability:null, retired:true },
+  { id:117, name:"Heavy Artillery Battery", cls:"Artillery", rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Bombard", n:8, e:3, s:7, w:3, ability:null, retired:true },
+  { id:118, name:"Heavy Cruiser",        cls:"Naval",     rarity:"Common", type:"unit", cost:5, ap:5, keyword:"Heavy Armor", n:7, e:6, s:6, w:2, ability:null, retired:true },
+  { id:119, name:"Veteran Signal Corps", cls:"Infantry",  rarity:"Rare",   type:"unit", cost:3, ap:3, keyword:null,         n:6, e:5, s:5, w:4, ability:"On Play: If you have activated Hero Powers from at least 2 different Heroes this match, draw 1 card.", retired:true },
+  { id:120, name:"Strategic Bomber",     cls:"Aircraft",  rarity:"Rare",   type:"unit", cost:5, ap:5, keyword:"Bombard",    n:8, e:6, s:5, w:4, ability:"The first time this Unit destroys an enemy, draw 1 card.", retired:true },
 
   // ── COMMANDS ───────────────────────────────────────────────────────────
   { id:16, name:"Artillery Barrage",   rarity:"Common", type:"command", cost:2, ap:1, effect:"Remove Armor from 1 enemy unit and Suppress it." },
@@ -103,12 +106,13 @@ export const CARDS = [
   // Priority Orders/Command Shuffle/Radio Interference/Coordinated Orders reference Hero Powers,
   // inert until Hero Phase logic exists. Change Formation references a rotation mechanic not yet
   // implemented in the digital prototype (see cards.js header).
-  { id:121, name:"Priority Orders",    rarity:"Common", type:"command", cost:1, ap:1, effect:"Your next Hero Power this turn costs 2F less, minimum 0." },
-  { id:122, name:"Command Shuffle",    rarity:"Common", type:"command", cost:1, ap:1, effect:"Move 1 Hero or swap 2 Heroes. This does not count as your normal Hero reposition this turn." },
-  { id:123, name:"Radio Interference", rarity:"Common", type:"command", cost:2, ap:2, effect:"Choose an enemy Hero. Its Activated Hero Power costs +1F during its controller's next turn." },
-  { id:124, name:"Change Formation",   rarity:"Common", type:"command", cost:1, ap:1, effect:"Rotate one unsuppressed friendly Unit 90 degrees." },
-  { id:125, name:"Field Reserves",     rarity:"Common", type:"command", cost:2, ap:2, effect:"Look at the top 4 cards of your deck. You may reveal a Unit and put it into your hand. Put the rest on the bottom." },
-  { id:126, name:"Coordinated Orders", rarity:"Rare",   type:"command", cost:3, ap:3, effect:"You may activate one additional Hero Power this turn using a different Hero. Pay that Hero Power's normal Fuel cost." },
+  // retired:true — CLIENT BUILD ONLY (origin-release branch), same v0.4 launch batch as above.
+  { id:121, name:"Priority Orders",    rarity:"Common", type:"command", cost:1, ap:1, effect:"Your next Hero Power this turn costs 2F less, minimum 0.", retired:true },
+  { id:122, name:"Command Shuffle",    rarity:"Common", type:"command", cost:1, ap:1, effect:"Move 1 Hero or swap 2 Heroes. This does not count as your normal Hero reposition this turn.", retired:true },
+  { id:123, name:"Radio Interference", rarity:"Common", type:"command", cost:2, ap:2, effect:"Choose an enemy Hero. Its Activated Hero Power costs +1F during its controller's next turn.", retired:true },
+  { id:124, name:"Change Formation",   rarity:"Common", type:"command", cost:1, ap:1, effect:"Rotate one unsuppressed friendly Unit 90 degrees.", retired:true },
+  { id:125, name:"Field Reserves",     rarity:"Common", type:"command", cost:2, ap:2, effect:"Look at the top 4 cards of your deck. You may reveal a Unit and put it into your hand. Put the rest on the bottom.", retired:true },
+  { id:126, name:"Coordinated Orders", rarity:"Rare",   type:"command", cost:3, ap:3, effect:"You may activate one additional Hero Power this turn using a different Hero. Pay that Hero Power's normal Fuel cost.", retired:true },
 
   // ── MISSIONS (retired 2026-07-30 — parked, not deleted; see cards.js header) ──
   { id:23, name:"Hold the Line",       rarity:"Common", type:"mission", cost:0, ap:0, req:"Control all objectives at end of your turn.",                                          reward:"Heal 5 HQ HP.", retired:true },
