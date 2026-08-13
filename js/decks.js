@@ -1,7 +1,7 @@
 // Deck rules, starter decks, validation, and custom-deck persistence.
 // Validation functions are pure (node-testable). localStorage helpers are
 // browser-only — never called at module top level.
-import { CARDS, CARD_BY_ID } from './cards.js?v=1786660573';
+import { CARDS, CARD_BY_ID } from './cards.js?v=1786665303';
 
 export const DECK_RULES = {
   deckSize: 30, // v0.4 fixed deck size (2026-07-30) — replaces the old 50-AP budget model. Exact, not a ceiling.
@@ -57,7 +57,9 @@ export const STARTER_DECKS = [
     // Bombard) and 2x Fighter (12, Aircraft/Airborne) — same class and keyword identity,
     // cost 3 instead of 4 (no tested cost-4 Artillery exists yet).
     ids: [63,63, 66,66, 65,65, 39,39, 6,6, 9,9, 5,5, 76,76, 18,18, 45,45, 40,40, 42,42, 12,12, 64,64, 43,43],
-    heroIds: [89, 103, 109, 107], // Logistics Chief, Armored Commander, Combined Arms General, Command Specialist
+    // Combined Arms General (109) retired 2026-08-14 — swapped for Recovery Officer (100),
+    // a closer fit for a grind-and-outlast deck (pairs with Field Medic on Suppression removal).
+    heroIds: [89, 103, 100, 107], // Logistics Chief, Armored Commander, Recovery Officer, Command Specialist
   },
 ];
 
