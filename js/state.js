@@ -49,7 +49,7 @@
 //                                 Persists until explicitly rotated again; never auto-clears.
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1786665303';
+import { CARD_BY_ID } from './cards.js?v=1786668083';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
