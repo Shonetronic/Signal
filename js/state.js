@@ -18,13 +18,14 @@
 //
 // PlayerState: {
 //   hq: number,                 — starts 30
-//   fuel: number,               — capped at fuelCap (default 6)
+//   fuel: number,               — capped at fuelCap (default 9)
 //   fuelCap: number,            — per-player storage cap; a Hero can raise it
 //   pendingFuelGain: number,    — delayed fuel (Industrial Surge), added at next startOfTurn
 //   hand: number[],             — cardIds in hand
 //   deck: number[],             — cardIds remaining (top = index 0)
 //   missions: ActiveMission[],
 //   pendingDiscounts: [{ appliesTo, column, amount, min }],  — unspent Fuel discounts
+//   pendingUnitBuffs: [{ appliesTo, amount }],  — unspent stat buffs (Deathrattle: Convoy Escort)
 // }
 //
 // ActiveMission: { cardId, killsAtDeploy? } — no turn limit; stays active until its reward fires.
@@ -49,7 +50,7 @@
 //                                 Persists until explicitly rotated again; never auto-clears.
 // }
 
-import { CARD_BY_ID } from './cards.js?v=1786668083';
+import { CARD_BY_ID } from './cards.js?v=1787182794';
 
 // ── State factory ────────────────────────────────────────────────────────────
 
@@ -73,14 +74,29 @@ export function createInitialState(p1DeckIds, p2DeckIds, mapId = 'kursk', p1Hero
   };
 }
 
+// Fisher-Yates — NOT `arr.sort(() => Math.random() - 0.5)`, which does not produce a uniform
+// shuffle (a well-known JS anti-pattern: sort implementations don't call the comparator on
+// every pair with equal frequency, and it's especially biased on small arrays — V8 uses
+// insertion sort below ~10 elements, exactly the size of a starting deck's shuffle-relevant
+// windows and the Objectives pool). Was the actual cause of "same objectives across 7 games in
+// a row" (2026-08-19 playtest report) — see pickObjectives in game.js and applyMulligan.
+export function shuffle(arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 function createPlayerState(deckCardIds, heroIds = []) {
-  const shuffled = [...deckCardIds].sort(() => Math.random() - 0.5);
+  const shuffled = shuffle(deckCardIds);
   const hand = shuffled.slice(0, 4);
   const deck = shuffled.slice(4);
   return {
     hq: 30,
     fuel: 0,
-    fuelCap: 6,
+    fuelCap: 9,
     pendingFuelGain: 0,
     hand,
     deck,
@@ -92,7 +108,15 @@ function createPlayerState(deckCardIds, heroIds = []) {
     heroRoster: [...heroIds],
     // Index = board column (0-3). Value = hero cardId occupying that zone, or null.
     heroZones: [null, null, null, null],
-    heroActivated: false,       // one Activated Hero Power per turn, across all zones
+    // Hero ids whose Activated Power has already fired THIS TURN. Each Hero may activate
+    // once per turn; different Heroes may each activate in the SAME turn (locked 2026-08-17,
+    // replaces the old single `heroActivated` once-per-turn-total flag — Coordinated Orders
+    // is retired as a result, since "activate another Hero's power this turn" is now default).
+    heroesActivatedThisTurn: [],
+    // Snapshot of the above, taken at the START of this player's turn (before it's cleared
+    // for the new turn) — i.e. "did I activate any Hero Power on my own previous turn."
+    // Powers Veteran Signal Corps (119). Cleared/recomputed every startOfTurn.
+    heroActivatedLastTurn: false,
     heroRepositioned: false,    // one move/swap per turn; a reinforcement consumes it
     // Per-player, because P1 and P2 cross each Objective threshold on different half-turns.
     // Starts at 0 (not 1) so the FIRST Hero deploys at round 2 (Objective Level 1) via
@@ -102,16 +126,8 @@ function createPlayerState(deckCardIds, heroIds = []) {
     lastObjLevel: 0,
     lastUnitClass: null,        // for Combined Arms General (109)
     // { [heroId]: true } — gates "first X each turn" passives (94, 104, 109, 110) so each
-    // fires at most once per owner turn. Cleared at startOfTurn alongside heroActivated.
+    // fires at most once per owner turn. Cleared at startOfTurn alongside heroesActivatedThisTurn.
     heroTriggeredThisTurn: {},
-    // heroId of whichever Hero used its Activated Power this turn (null if none yet).
-    // Cleared at startOfTurn alongside heroActivated. Lets Coordinated Orders (126) enforce
-    // "using a different Hero" for its bonus activation.
-    heroActivatedId: null,
-    // Every distinct Hero id whose Activated Power has fired THIS MATCH (not per-turn) —
-    // for Veteran Signal Corps (119): "if you have activated Hero Powers from at least 2
-    // different Heroes this match". Never cleared.
-    heroesActivatedEver: [],
     // Set by Priority Orders (121): Fuel discount applied to the very next Hero Power
     // activation this turn, then consumed. Independent of pendingDiscounts (that system is
     // keyed by card class/type, not applicable to a Hero Power's activeCost).
@@ -120,10 +136,11 @@ function createPlayerState(deckCardIds, heroIds = []) {
     // column's Activated Hero Power during the controller's next turn. { [col]: amount }.
     // Cleared at startOfTurn alongside the other per-cycle Hero fields.
     heroTaxedColumns: {},
-    // Set by Coordinated Orders (126): true for the rest of this turn only, lets the player
-    // activate one additional Hero Power (a different Hero than heroActivatedId) bypassing
-    // the normal heroActivated lock once. Cleared at startOfTurn.
-    extraHeroActivation: false,
+    // One-shot stat buffs queued for the next matching Unit played (Deathrattle: Convoy Escort
+    // 138). Entries: { appliesTo: className, amount }. Consumed (removed) by
+    // checkPendingUnitBuff in combat.js the moment a matching Unit is placed — unlike
+    // pendingDiscounts, this is a stat bonus, not a Fuel discount, so it needs its own list.
+    pendingUnitBuffs: [],
   };
 }
 
@@ -142,12 +159,13 @@ export function startOfTurn(state) {
   ps.pendingFuelGain = 0;
   // Hero Phase allowances refresh here rather than in endTurn: this runs for the active
   // player only and survives remote sync, matching the killsThisTurn convention.
-  ps.heroActivated = false;
+  // Snapshot BEFORE clearing — "did I activate a Hero Power on my own last turn" (Veteran
+  // Signal Corps, 119) needs the value from the turn that's ending, not the fresh one.
+  ps.heroActivatedLastTurn = (ps.heroesActivatedThisTurn ?? []).length > 0;
+  ps.heroesActivatedThisTurn = [];
   ps.heroRepositioned = false;
   ps.heroTriggeredThisTurn = {};
-  ps.heroActivatedId = null;
   ps.heroTaxedColumns = {};
-  ps.extraHeroActivation = false;
   ps.pendingHeroDiscount = 0; // "this turn" only (Priority Orders) — expires unused
 
   // Clear per-turn grants and obj bonus for the active player's units before objective effects re-apply.
@@ -235,16 +253,16 @@ export function spendFuel(playerState, amount) {
 
 export function gainFuel(playerState, amount, cap = true) {
   const newFuel = playerState.fuel + amount;
-  // Cap is per-player so a Hero can raise it (Logistics Chief: 8 instead of 6).
+  // Cap is per-player so a Hero can raise it (Logistics Chief: 11 instead of 9).
   // Callers passing cap=false (objective/mission Fuel grants) still bypass it entirely.
   return { ...playerState, fuel: cap ? Math.min(fuelCapOf(playerState), newFuel) : newFuel };
 }
 
-// Base cap is 6, but Logistics Chief (89) raises it to 8 while deployed in any Hero Zone.
+// Base cap is 9, but Logistics Chief (89) raises it to 11 while deployed in any Hero Zone.
 export function fuelCapOf(playerState) {
-  const base = playerState.fuelCap ?? 6;
+  const base = playerState.fuelCap ?? 9;
   const hasLogisticsChief = (playerState.heroZones ?? []).includes(89);
-  return hasLogisticsChief ? Math.max(base, 8) : base;
+  return hasLogisticsChief ? Math.max(base, 11) : base;
 }
 
 // ── Fuel discounts ───────────────────────────────────────────────────────────

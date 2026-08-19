@@ -5,7 +5,7 @@
 // Run with: node selfplay_test.mjs [games]
 import { chromium } from "playwright";
 import { CARD_BY_ID } from "./js/cards.js";
-import { bestPlacement, bestExistingAttack, findLethal, bestAttackForUnit, bestDamageCommandTarget, maxAttacksFor } from "./js/bot_ai.js";
+import { bestPlacement, bestExistingAttack, findLethal, findCombinedLethal, bestAttackForUnit, bestDamageCommandTarget, scoreCommand, scoreHeroPower, bestHeroPowerTarget, bestHeroDeployment, maxAttacksFor } from "./js/bot_ai.js";
 import { discountFor } from "./js/state.js";
 
 const NUM_GAMES = Number(process.argv[2] || 3);
@@ -15,7 +15,7 @@ const BASE_URL = "http://localhost:3000";
 const DAMAGE_COMMAND_IDS = new Set([16, 20, 79]);
 
 const DECKS = ["aggro", "control", "counter", "power"];
-const MAPS = ["normandy", "stalingrad", "el_alamein", "ardennes", "kursk"];
+const MAPS = ["normandy", "stalingrad", "el_alamein", "ardennes", "kursk", "midway"];
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
@@ -29,6 +29,12 @@ async function clickTile(page, key) {
 
 async function clickHandCard(page, cardId) {
   await page.locator(`#p1-hand .hand-card[data-card-id="${cardId}"]`).first().click().catch(() => {});
+}
+
+// Plain click (no shiftKey) activates a deployed Hero's Power — shift+click is a reposition,
+// which this harness never does. See game.js's handleHeroZoneClick.
+async function clickHeroZone(page, active, col) {
+  await page.locator(`#hero-zone-${active} .hero-zone-slot[data-hero-zone="${active}-${col}"]`).first().click().catch(() => {});
 }
 
 async function handleForwardObserver(page) {
@@ -45,15 +51,47 @@ async function handleForwardObserver(page) {
   await page.waitForTimeout(30);
 }
 
-// Resolves the Hero deploy modal (starting pick and later reinforcements): take the first
-// hero offered and the first free column. An unhandled modal doesn't throw — it silently
-// swallows clicks and the game reports STALLED, so this guard is what keeps runs green.
+// Radio Operator (111) on-play: look at top 2 of the deck, put one on top. Binary choice,
+// resolves on a single click — no separate Confirm button (see game.js's showRadioOperatorModal).
+async function handleRadioOperator(page) {
+  const modal = page.locator("#radio-op-modal");
+  if (!(await modal.isVisible().catch(() => false))) return;
+  await page.locator("#radio-op-cards .fo-pos-btn").first().click().catch(() => {});
+  await page.waitForTimeout(30);
+}
+
+// Change Formation (124) / Field Engineer (91): direction doesn't affect scoring, always CW.
+async function handleRotateDirection(page) {
+  const modal = page.locator("#rotate-direction-modal");
+  if (!(await modal.isVisible().catch(() => false))) return;
+  await page.locator("#rotate-cw-btn").click().catch(() => {});
+  await page.waitForTimeout(30);
+}
+
+// Resolves the Hero deploy modal (starting pick and later reinforcements) using the same
+// bestHeroDeployment scoring the in-page "vs AI" bot uses, falling back to first-hero/first-zone
+// if state can't be read. An unhandled modal doesn't throw — it silently swallows clicks and the
+// game reports STALLED, so this guard is what keeps runs green.
 async function handleHeroDeploy(page) {
   const modal = page.locator("#hero-deploy-modal");
   if (!(await modal.isVisible().catch(() => false))) return;
-  await page.locator("#hero-deploy-cards .hero-card").first().click();
-  await page.waitForTimeout(20);
-  await page.locator("#hero-deploy-zones .hero-zone-pick:not([disabled])").first().click();
+
+  const debug = await readDebug(page);
+  const state = debug?.state;
+  const active = state?.initiative;
+  const roster = state?.[active]?.heroRoster ?? [];
+  const heroZones = state?.[active]?.heroZones ?? [null, null, null, null];
+  const choice = state && roster.length ? bestHeroDeployment(state, active, roster, heroZones) : null;
+
+  if (choice) {
+    await page.locator(`#hero-deploy-cards .hero-card[data-hero-id="${choice.heroId}"]`).first().click();
+    await page.waitForTimeout(20);
+    await page.locator(".hero-zone-pick").nth(choice.col).click();
+  } else {
+    await page.locator("#hero-deploy-cards .hero-card").first().click();
+    await page.waitForTimeout(20);
+    await page.locator("#hero-deploy-zones .hero-zone-pick:not([disabled])").first().click();
+  }
   await page.waitForTimeout(30);
 }
 
@@ -66,7 +104,7 @@ async function handleArtyTargeting(page) {
 
 // Resolve an attack-targeting or command-targeting prompt smartly: re-read live state,
 // score the DOM-offered candidate tiles, click the best one. Loops for Double Attack.
-async function resolveTargetingSmart(page, { attackerKey = null, isDamageCommand = false } = {}, maxSteps = 3) {
+async function resolveTargetingSmart(page, { attackerKey = null, isDamageCommand = false, heroPower = null } = {}, maxSteps = 3) {
   for (let i = 0; i < maxSteps; i++) {
     const targetTiles = page.locator(".tile.targetable, .tile.cmd-target");
     const count = await targetTiles.count();
@@ -80,6 +118,9 @@ async function resolveTargetingSmart(page, { attackerKey = null, isDamageCommand
       if (isDamageCommand) {
         const best = bestDamageCommandTarget(debug.state, debug.state.initiative, keys);
         if (best) chosenKey = best.targetKey;
+      } else if (heroPower) {
+        const best = bestHeroPowerTarget(debug.state, debug.state.initiative, heroPower.heroId, heroPower.col);
+        if (best && keys.includes(best.key)) chosenKey = best.key;
       } else if (attackerKey) {
         const atk = bestAttackForUnit(debug.state, attackerKey);
         if (atk && keys.includes(atk.targetKey)) chosenKey = atk.targetKey;
@@ -113,6 +154,8 @@ async function playTurnSmart(page) {
 
   for (let i = 0; i < 12; i++) {
     await handleForwardObserver(page);
+    await handleRadioOperator(page);
+    await handleRotateDirection(page);
     if (await page.locator("#end-screen").isVisible().catch(() => false)) return;
 
     let debug = await readDebug(page);
@@ -128,8 +171,26 @@ async function playTurnSmart(page) {
     if (lethal) {
       await clickTile(page, lethal.attackerKey);
       await page.waitForTimeout(30);
-      await clickTile(page, lethal.targetKey);
-      await page.waitForTimeout(30);
+      // Empty-Board HQ Strike resolves on the attacker's own click — no target tile to click.
+      if (!lethal.isHQStrike) {
+        await clickTile(page, lethal.targetKey);
+        await page.waitForTimeout(30);
+      }
+      continue;
+    }
+
+    // 1b. No single attack is lethal — check whether several attackers together are.
+    const combinedLethal = findCombinedLethal(state, active, attackedMap);
+    if (combinedLethal) {
+      for (const step of combinedLethal) {
+        await clickTile(page, step.unitKey);
+        await page.waitForTimeout(30);
+        if (!step.isHQStrike) {
+          await clickTile(page, step.targetKey);
+          await page.waitForTimeout(30);
+        }
+        if (await page.locator("#end-screen").isVisible().catch(() => false)) return;
+      }
       continue;
     }
 
@@ -143,13 +204,38 @@ async function playTurnSmart(page) {
     const placement = handUnitIds.length && emptyTiles.length ? bestPlacement(state, active, handUnitIds, emptyTiles) : null;
     const attack = bestExistingAttack(state, active, attackedMap);
 
-    const affordableCommandId = ps.hand.find(id => { const c = CARD_BY_ID[id]; return c && c.type === "command" && ps.fuel >= c.cost && !deadThisTurn.has(id); });
+    const affordableCommandIds = ps.hand.filter(id => { const c = CARD_BY_ID[id]; return c && c.type === "command" && ps.fuel >= c.cost && !deadThisTurn.has(id); });
     const affordableMissionId = ps.hand.find(id => { const c = CARD_BY_ID[id]; return c && c.type === "mission" && ps.fuel >= c.cost && !deadThisTurn.has(id); });
+
+    let bestCommand = null;
+    for (const id of affordableCommandIds) {
+      const score = scoreCommand(state, active, id, attackedMap);
+      if (!bestCommand || score > bestCommand.score) bestCommand = { cardId: id, score };
+    }
+
+    // Hero Power: each Hero once per turn, multiple different Heroes okay in the same turn
+    // (2026-08-17 — Coordinated Orders retired, its bonus activation is baseline now).
+    // Only implemented, powerType:"active" Heroes; skip whichever already no-op'd this turn.
+    let bestHeroPower = null;
+    {
+      const activatedThisTurn = ps.heroesActivatedThisTurn ?? [];
+      const heroZones = ps.heroZones ?? [null, null, null, null];
+      for (let col = 0; col < 4; col++) {
+        const heroId = heroZones[col];
+        const hero = heroId != null ? CARD_BY_ID[heroId] : null;
+        if (!hero || hero.powerType !== "active" || !hero.implemented) continue;
+        if (activatedThisTurn.includes(heroId)) continue;
+        if (ps.fuel < (hero.activeCost ?? 0) || deadThisTurn.has(`hero:${heroId}`)) continue;
+        const score = scoreHeroPower(state, active, heroId, col, attackedMap);
+        if (!bestHeroPower || score > bestHeroPower.score) bestHeroPower = { heroId, col, score };
+      }
+    }
 
     const candidates = [];
     if (placement) candidates.push({ type: "place", score: placement.score, cardId: placement.cardId, tileKey: placement.tileKey });
-    if (attack) candidates.push({ type: "attack", score: attack.score, unitKey: attack.unitKey, targetKey: attack.targetKey });
-    if (affordableCommandId !== undefined) candidates.push({ type: "command", score: 0.1, cardId: affordableCommandId });
+    if (attack) candidates.push({ type: "attack", score: attack.score, unitKey: attack.unitKey, targetKey: attack.targetKey, isHQStrike: attack.isHQStrike });
+    if (bestCommand) candidates.push({ type: "command", score: bestCommand.score, cardId: bestCommand.cardId });
+    if (bestHeroPower) candidates.push({ type: "heroPower", score: bestHeroPower.score, heroId: bestHeroPower.heroId, col: bestHeroPower.col });
     if (candidates.length === 0 && affordableMissionId !== undefined) candidates.push({ type: "mission", score: 0.1, cardId: affordableMissionId });
 
     if (candidates.length === 0) break; // nothing useful left this turn
@@ -166,13 +252,16 @@ async function playTurnSmart(page) {
     } else if (choice.type === "attack") {
       await clickTile(page, choice.unitKey);
       await page.waitForTimeout(30);
-      await clickTile(page, choice.targetKey);
-      await page.waitForTimeout(30);
+      if (!choice.isHQStrike) {
+        await clickTile(page, choice.targetKey);
+        await page.waitForTimeout(30);
+      }
     } else if (choice.type === "command") {
       const handBefore = ps.hand.length;
       await clickHandCard(page, choice.cardId);
       await page.waitForTimeout(30);
       await resolveTargetingSmart(page, { isDamageCommand: DAMAGE_COMMAND_IDS.has(choice.cardId) });
+      await handleRotateDirection(page); // Change Formation (124)
       const afterDebug = await readDebug(page);
       const handAfter = afterDebug?.state?.[active]?.hand?.length ?? handBefore;
       if (handAfter === handBefore) deadThisTurn.add(choice.cardId); // no-op: card never left hand
@@ -180,6 +269,15 @@ async function playTurnSmart(page) {
     } else if (choice.type === "mission") {
       await clickHandCard(page, choice.cardId);
       await page.waitForTimeout(30);
+    } else if (choice.type === "heroPower") {
+      await clickHeroZone(page, active, choice.col);
+      await page.waitForTimeout(30);
+      await resolveTargetingSmart(page, { heroPower: { heroId: choice.heroId, col: choice.col } });
+      await handleRotateDirection(page); // Field Engineer (91)
+      const afterDebug = await readDebug(page);
+      const nowActivated = afterDebug?.state?.[active]?.heroesActivatedThisTurn ?? [];
+      if (!nowActivated.includes(choice.heroId)) deadThisTurn.add(`hero:${choice.heroId}`); // no-op: no legal target
+      await flushPendingUiState(page, afterDebug);
     }
   }
 }
@@ -218,9 +316,12 @@ async function playOneGame(page) {
 
     await handleHeroDeploy(page);   // reinforcement can fire at the start of a turn
     await handleForwardObserver(page);
+    await handleRadioOperator(page);
     await handleArtyTargeting(page);
     await playTurnSmart(page);
     await handleForwardObserver(page);
+    await handleRadioOperator(page);
+    await handleRotateDirection(page);
 
     if (await page.locator("#end-screen").isVisible().catch(() => false)) break;
     const endTurnBtn = page.locator("#btn-end-turn");

@@ -91,23 +91,26 @@ test('every hero carries an authoritative scope and implemented flag', () => {
   // Scope must never be inferred from ability wording — hero 93 reads "this Hero's column"
   // only after a 2026-08-01 rewording, and text matching had misread it as board-scoped.
   const heroes = CARDS.filter(c => c.type === 'hero');
-  assert.equal(heroes.length, 24);
+  // 28 on this build — Week 3 batch added 4 (142, 143, 145, 147); Field Marshal (144) and
+  // Grand Marshal (146) are held back pending further review, and Weird AirCraft (250) was
+  // never added at all — parked, see cards.js header.
+  assert.equal(heroes.length, 28);
   for (const h of heroes) {
     assert.ok(['column', 'board'].includes(h.scope), `${h.name} has no valid scope`);
     assert.equal(typeof h.implemented, 'boolean', `${h.name} has no implemented flag`);
   }
-  // 11 implemented as of 2026-08-14 — Combined Arms General (109) retired.
-  assert.equal(heroes.filter(h => h.implemented).length, 11);
-  // 14 column / 10 board as of the 2026-08 balance pass — Garrison Commander (99),
-  // Counteroffensive General (101), and Armored Commander (103) moved column -> board.
-  assert.equal(heroes.filter(h => h.scope === 'column').length, 14);
+  // 16 implemented on this build.
+  assert.equal(heroes.filter(h => h.implemented).length, 16);
+  // 16 column / 12 board on this build — Week 3 added 2 column (142, 145) + 2 board (143, 147).
+  assert.equal(heroes.filter(h => h.scope === 'column').length, 16);
 });
 
 test('implemented heroes cover both scopes, both power types, and all 3 Commons', () => {
   const impl = CARDS.filter(c => c.type === 'hero' && c.implemented);
-  assert.equal(impl.filter(h => h.powerType === 'active').length, 6);
-  // 5 passive as of 2026-08-14 — Combined Arms General (109, passive) retired.
-  assert.equal(impl.filter(h => h.powerType === 'passive').length, 5);
+  // 9 active on this build — Week 3 added 2 active (142, 145).
+  assert.equal(impl.filter(h => h.powerType === 'active').length, 9);
+  // 7 passive on this build — Week 3 added 2 passive (143, 147).
+  assert.equal(impl.filter(h => h.powerType === 'passive').length, 7);
   assert.ok(impl.some(h => h.scope === 'board') && impl.some(h => h.scope === 'column'));
   assert.equal(impl.filter(h => h.rarity === 'Common').length, 3);
 });

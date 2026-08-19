@@ -1,10 +1,11 @@
-// Main menu script: local play + code-based create/join + vs AI (unchanged
-// behavior, moved out of an inline <script> tag) plus the open-lobby browser
-// (host a lobby with a fixed map, browse and join others without typing a code).
+// Main menu script: local play + code-based create/join (unchanged behavior,
+// moved out of an inline <script> tag) plus the open-lobby browser (host a
+// lobby with a fixed map, browse and join others without typing a code).
+// vs-AI entry point deliberately not exposed on this build.
 import { generateGameCode, initAuth, getDisplayName, setDisplayName,
-         createOpenLobby, removeOpenLobby, subscribeOpenLobbies } from './firebase.js?v=1786591817';
-import { filterStale, sortByNewest, formatWaiting } from './lobbies.js?v=1786591817';
-import { MAPS } from './maps.js?v=1786591817';
+         createOpenLobby, removeOpenLobby, subscribeOpenLobbies } from './firebase.js?v=1787182794';
+import { filterStale, sortByNewest, formatWaiting } from './lobbies.js?v=1787182794';
+import { MAPS } from './maps.js?v=1787182794';
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -17,10 +18,6 @@ document.getElementById('btn-local').addEventListener('click', () => {
 
 document.getElementById('btn-deckbuilder').addEventListener('click', () => {
   window.location.href = 'deckbuilder.html';
-});
-
-document.getElementById('btn-ai').addEventListener('click', () => {
-  window.location.href = 'game.html?ai=1';
 });
 
 document.getElementById('btn-create').addEventListener('click', () => {

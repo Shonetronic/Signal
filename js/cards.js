@@ -4,17 +4,25 @@
 // Missions: { id, name, rarity, type:"mission", cost, ap, req, reward } — no turn limit
 // Objectives: { id, name, type:"objective", category, l1, l2, l3, l4 }
 // Heroes: { id, name, rarity, type:"hero", scope:"column"|"board", implemented, powerType:"active"|"passive", activeCost, ability, direction }
-//   `scope` is authoritative — do NOT infer it from ability wording. 17 heroes are column-scoped,
-//   7 are board-wide. `implemented` marks the Tier 1 pool whose powers actually have behaviour;
-//   the rest are parked (not cut) pending mechanics that don't exist yet — see each card's note.
+//   `scope` is authoritative — do NOT infer it from ability wording. 19 heroes are column-scoped,
+//   9 are board-wide (28 total, launch pool + Week 3 additions). `implemented` marks the Tier 1
+//   pool whose powers actually have behaviour; the rest are parked (not cut) pending mechanics
+//   that don't exist yet — see each card's note.
 //   — added 2026-07-30 (v0.4 Hero command layer, from Denis's Doc 02 handoff). Heroes are
 //   never shuffled into the 30-card deck (see getDeckPool in decks.js) — they belong to a
-//   separate 4-Hero roster per deck. No Hero Phase/activation/reinforcement logic is wired
-//   yet (data only, UI skeleton only — see the hero-zone-* elements in game.html/game.css).
-//   Ability text that references Hero Powers/Hero Zones/rotation is inert until that logic
-//   exists — flagged inline below on the specific cards affected.
+//   separate 4-Hero roster per deck. Hero Phase/activation/reinforcement logic is wired
+//   (see game.js's runHeroPhase/tryActivateHero/applyHeroPower) — `implemented:false` now
+//   means specifically "this Hero's own power has no case in applyHeroPower yet", not that
+//   the surrounding system is missing.
 // Optional `retired: true` on any card excludes it from the deck pool/validator
 // (getDeckPool/validateDeck in decks.js) without deleting its data or logic.
+// Deathrattle keyword (added 2026-08-19, from Denis's "DeathRattle Brainstorm" tab): a unit
+// keyword whose effect fires via checkDeathrattle (combat.js) whenever that unit transitions
+// to state:"destroyed", by combat OR by a self-destroy Command (Sacrifice Play 140, Scorched
+// Earth Rally 141) — never by Suppression alone, and never by leaving the board un-destroyed
+// (Tactical Withdrawal). Supreme Commander/Graves Registration Officer (143/147) are the only
+// Heroes whose effect is "modify how another card's own effect resolves" rather than a
+// self-contained buff — see their `direction` notes.
 
 export const CARDS = [
   // ── UNITS ──────────────────────────────────────────────────────────────
@@ -58,7 +66,7 @@ export const CARDS = [
   { id:66, name:"King Tiger",          cls:"Tank",      rarity:"Common", type:"unit", cost:5, ap:4,  keyword:"Heavy Armor",   n:4, e:7, s:6, w:6, ability:null },
   { id:67, name:"Battleship",          cls:"Naval",     rarity:"Common", type:"unit", cost:4, ap:3,  keyword:"Heavy Armor",   n:5, e:5, s:5, w:1, ability:null },
   { id:68, name:"Chief of Staff",      cls:"Commander", rarity:"Rare",   type:"unit", cost:3, ap:3,  keyword:"Inspire",       n:1, e:8, s:6, w:1, ability:null, retired:true }, // Retired 2026-08-13 — Commander class parked now that Heroes cover the out-of-grid strategic-presence role.
-  { id:69, name:"Quartermaster",       cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1,  keyword:null,           n:1, e:1, s:4, w:4, ability:"Start of your turn: if you control both objectives, draw a card." },
+  { id:69, name:"Quartermaster",       cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1,  keyword:null,           n:1, e:1, s:4, w:4, ability:"Start of your turn: if you control every objective on the map, draw a card." },
   { id:70, name:"Trench Runners",      cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1,  keyword:null,           n:4, e:1, s:6, w:1, ability:null },
   { id:71, name:"Light Skirmishers",   cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1,  keyword:null,           n:1, e:5, s:2, w:5, ability:null },
   { id:72, name:"Reserve Infantry",    cls:"Infantry",  rarity:"Common", type:"unit", cost:2, ap:2,  keyword:null,           n:1, e:6, s:5, w:6, ability:null },
@@ -66,19 +74,31 @@ export const CARDS = [
 
   // ── UNITS — v0.4 launch filler (2026-07-30, from Denis's Doc 03 handoff) ──
   // Abilities referencing "friendly Hero" are inert until Hero Phase logic exists (see cards.js header).
-  // retired:true on this whole block — CLIENT BUILD ONLY (origin-release branch): this batch
-  // hasn't been through balance testing yet, held back from the client-facing site pending that.
-  // Do not carry this flag back onto main/internal — full-set testing still uses these cards.
-  { id:111, name:"Radio Operator",       cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1, keyword:null,         n:4, e:3, s:3, w:2, ability:"On Play: If a friendly Hero is in this column, look at the top 2 cards of your deck. Put one on top and one on the bottom.", retired:true },
-  { id:112, name:"Combat Engineers",     cls:"Infantry",  rarity:"Common", type:"unit", cost:2, ap:2, keyword:null,         n:5, e:4, s:4, w:2, ability:"On Play: If a friendly Hero is in this column, remove Suppression from another friendly Unit in this column.", retired:true },
-  { id:113, name:"Recon Jeep",           cls:"Tank",      rarity:"Common", type:"unit", cost:1, ap:1, keyword:null,         n:6, e:4, s:2, w:1, ability:null, retired:true },
-  { id:114, name:"Mobile Command Halftrack", cls:"Tank",  rarity:"Common", type:"unit", cost:3, ap:3, keyword:"Armor",      n:6, e:4, s:4, w:2, ability:"On Play: You may move a Hero into this column if its Hero Zone is empty.", retired:true },
-  { id:115, name:"Liaison Aircraft",     cls:"Aircraft",  rarity:"Common", type:"unit", cost:1, ap:1, keyword:"Airborne",   n:4, e:3, s:2, w:2, ability:null, retired:true },
-  { id:116, name:"Fighter-Bomber",       cls:"Aircraft",  rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Airborne",   n:7, e:6, s:5, w:3, ability:null, retired:true },
-  { id:117, name:"Heavy Artillery Battery", cls:"Artillery", rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Bombard", n:8, e:3, s:7, w:3, ability:null, retired:true },
-  { id:118, name:"Heavy Cruiser",        cls:"Naval",     rarity:"Common", type:"unit", cost:5, ap:5, keyword:"Heavy Armor", n:7, e:6, s:6, w:2, ability:null, retired:true },
-  { id:119, name:"Veteran Signal Corps", cls:"Infantry",  rarity:"Rare",   type:"unit", cost:3, ap:3, keyword:null,         n:6, e:5, s:5, w:4, ability:"On Play: If you have activated Hero Powers from at least 2 different Heroes this match, draw 1 card.", retired:true },
-  { id:120, name:"Strategic Bomber",     cls:"Aircraft",  rarity:"Rare",   type:"unit", cost:5, ap:5, keyword:"Bombard",    n:8, e:6, s:5, w:4, ability:"The first time this Unit destroys an enemy, draw 1 card.", retired:true },
+  { id:111, name:"Radio Operator",       cls:"Infantry",  rarity:"Common", type:"unit", cost:1, ap:1, keyword:null,         n:4, e:3, s:3, w:2, ability:"On Play: If a friendly Hero is in this column, look at the top 2 cards of your deck. Put one on top and one on the bottom." },
+  { id:112, name:"Combat Engineers",     cls:"Infantry",  rarity:"Common", type:"unit", cost:2, ap:2, keyword:null,         n:5, e:4, s:4, w:2, ability:"On Play: If a friendly Hero is in this column, remove Suppression from another friendly Unit in this column." },
+  { id:113, name:"Recon Jeep",           cls:"Tank",      rarity:"Common", type:"unit", cost:1, ap:1, keyword:null,         n:6, e:4, s:2, w:1, ability:null },
+  { id:114, name:"Mobile Command Halftrack", cls:"Tank",  rarity:"Common", type:"unit", cost:3, ap:3, keyword:"Armor",      n:6, e:4, s:4, w:2, ability:"On Play: You may move a Hero into this column if its Hero Zone is empty." },
+  { id:115, name:"Liaison Aircraft",     cls:"Aircraft",  rarity:"Common", type:"unit", cost:1, ap:1, keyword:"Airborne",   n:4, e:3, s:2, w:2, ability:null },
+  { id:116, name:"Fighter-Bomber",       cls:"Aircraft",  rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Airborne",   n:7, e:6, s:5, w:3, ability:null },
+  { id:117, name:"Heavy Artillery Battery", cls:"Artillery", rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Bombard", n:8, e:3, s:7, w:3, ability:null },
+  { id:118, name:"Heavy Cruiser",        cls:"Naval",     rarity:"Common", type:"unit", cost:5, ap:5, keyword:"Heavy Armor", n:7, e:6, s:6, w:2, ability:null },
+  { id:119, name:"Veteran Signal Corps", cls:"Infantry",  rarity:"Rare",   type:"unit", cost:3, ap:3, keyword:null,         n:6, e:5, s:5, w:4, ability:"On Play: If you activated a Hero Power last turn, draw 1 card." },
+  { id:120, name:"Strategic Bomber",     cls:"Aircraft",  rarity:"Rare",   type:"unit", cost:5, ap:5, keyword:"Bombard",    n:8, e:6, s:5, w:4, ability:"The first time this Unit destroys an enemy, draw 1 card." },
+
+  // ── UNITS — Deathrattle (added 2026-08-19, from Denis's "DeathRattle Brainstorm" tab on the
+  // Card List Sheet). Card names invented — the brainstorm rows had no names. D1-D4 were all
+  // drafted as Artillery (asymmetric vs. one each for the other 4 classes); shipped as-is per
+  // Denis's call rather than trimmed to one. Deathrattle triggers whenever the unit is
+  // Destroyed by ANY means (combat or a self-destroy Command like Sacrifice Play/Scorched Earth
+  // Rally), not combat-kills only — see checkDeathrattle in combat.js.
+  { id:131, name:"Forward Gun Crew",   cls:"Artillery", rarity:"Common", type:"unit", cost:2, ap:2, keyword:"Deathrattle", n:4, e:4, s:4, w:4,   ability:"Deathrattle: Draw 1 card." },
+  { id:132, name:"Salvage Battery",    cls:"Artillery", rarity:"Common", type:"unit", cost:3, ap:3, keyword:"Deathrattle", n:5, e:2, s:2, w:6,   ability:"Deathrattle: Summon a random 1-cost friendly Artillery from your deck onto this tile." },
+  { id:133, name:"Ranging Section",    cls:"Artillery", rarity:"Common", type:"unit", cost:1, ap:1, keyword:"Deathrattle", n:7, e:1, s:1, w:1,   ability:"Deathrattle: Give a random friendly Artillery (that doesn't already have it) Bombard until your next turn." },
+  { id:134, name:"Veteran Battery",    cls:"Artillery", rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Deathrattle", n:10,e:2, s:1, w:1,   ability:"Deathrattle: Give a random friendly Artillery +3 all sides, until end of your next turn." },
+  { id:135, name:"Rearguard Squad",    cls:"Infantry",  rarity:"Common", type:"unit", cost:2, ap:2, keyword:"Deathrattle", n:3, e:4, s:3, w:4,   ability:"Deathrattle: Give an adjacent friendly Unit +1 all sides (until your next turn)." },
+  { id:136, name:"Salvage Crew",       cls:"Tank",      rarity:"Common", type:"unit", cost:2, ap:2, keyword:"Deathrattle", n:4, e:5, s:5, w:4,   ability:"Deathrattle: Your next Tank costs 1 less Fuel." },
+  { id:137, name:"Squadron Reserve",   cls:"Aircraft",  rarity:"Common", type:"unit", cost:4, ap:4, keyword:"Deathrattle", n:6, e:2, s:3, w:4,   ability:"Deathrattle: Summon a random 2-cost friendly Aircraft from your deck onto this tile." },
+  { id:138, name:"Convoy Escort",      cls:"Naval",     rarity:"Common", type:"unit", cost:2, ap:2, keyword:"Deathrattle", n:2, e:2, s:5, w:5,   ability:"Deathrattle: Your next Naval Unit played gets +1 all sides, permanently." },
 
   // ── COMMANDS ───────────────────────────────────────────────────────────
   { id:16, name:"Artillery Barrage",   rarity:"Common", type:"command", cost:2, ap:1, effect:"Remove Armor from 1 enemy unit and Suppress it." },
@@ -103,16 +123,21 @@ export const CARDS = [
   { id:80, name:"Entrench",            rarity:"Common", type:"command", cost:2, ap:2, effect:"Friendly Infantry you control gain +2 to all sides until your next turn." },
 
   // ── COMMANDS — v0.4 launch filler (2026-07-30, from Denis's Doc 03 handoff) ──
-  // Priority Orders/Command Shuffle/Radio Interference/Coordinated Orders reference Hero Powers,
-  // inert until Hero Phase logic exists. Change Formation references a rotation mechanic not yet
-  // implemented in the digital prototype (see cards.js header).
-  // retired:true — CLIENT BUILD ONLY (origin-release branch), same v0.4 launch batch as above.
-  { id:121, name:"Priority Orders",    rarity:"Common", type:"command", cost:1, ap:1, effect:"Your next Hero Power this turn costs 2F less, minimum 0.", retired:true },
-  { id:122, name:"Command Shuffle",    rarity:"Common", type:"command", cost:1, ap:1, effect:"Move 1 Hero or swap 2 Heroes. This does not count as your normal Hero reposition this turn.", retired:true },
-  { id:123, name:"Radio Interference", rarity:"Common", type:"command", cost:2, ap:2, effect:"Choose an enemy Hero. Its Activated Hero Power costs +1F during its controller's next turn.", retired:true },
-  { id:124, name:"Change Formation",   rarity:"Common", type:"command", cost:1, ap:1, effect:"Rotate one unsuppressed friendly Unit 90 degrees.", retired:true },
-  { id:125, name:"Field Reserves",     rarity:"Common", type:"command", cost:2, ap:2, effect:"Look at the top 4 cards of your deck. You may reveal a Unit and put it into your hand. Put the rest on the bottom.", retired:true },
-  { id:126, name:"Coordinated Orders", rarity:"Rare",   type:"command", cost:3, ap:3, effect:"You may activate one additional Hero Power this turn using a different Hero. Pay that Hero Power's normal Fuel cost.", retired:true },
+  // Hero Phase logic now exists (2026-08-17) — Priority Orders/Command Shuffle/Radio
+  // Interference/Change Formation are all live. Coordinated Orders retired below: the base
+  // Hero Power Activation Economy now lets every deployed Hero activate once per turn, which
+  // is exactly what that card used to grant as a one-time bonus — its effect is baseline now.
+  { id:121, name:"Priority Orders",    rarity:"Common", type:"command", cost:1, ap:1, effect:"Your next Hero Power this turn costs 2F less, minimum 0." },
+  { id:122, name:"Command Shuffle",    rarity:"Common", type:"command", cost:1, ap:1, effect:"Move 1 Hero or swap 2 Heroes. This does not count as your normal Hero reposition this turn." },
+  { id:123, name:"Radio Interference", rarity:"Common", type:"command", cost:2, ap:2, effect:"Choose an enemy Hero. Its Activated Hero Power costs +1F during its controller's next turn." },
+  { id:124, name:"Change Formation",   rarity:"Common", type:"command", cost:1, ap:1, effect:"Rotate one unsuppressed friendly Unit 90 degrees, in either direction (your choice)." },
+  { id:125, name:"Field Reserves",     rarity:"Common", type:"command", cost:2, ap:2, effect:"Look at the top 4 cards of your deck. You may reveal a Unit and put it into your hand. Put the rest on the bottom." },
+  { id:126, name:"Coordinated Orders", rarity:"Rare",   type:"command", cost:3, ap:3, effect:"You may activate one additional Hero Power this turn using a different Hero. Pay that Hero Power's normal Fuel cost.", retired:true }, // Retired 2026-08-17 — the Activation Economy change (multiple Heroes per turn) made this baseline behavior.
+
+  // ── COMMANDS — Deathrattle support (added 2026-08-19, from Denis's "DeathRattle Brainstorm" tab) ──
+  { id:139, name:"Grim Requisition",     rarity:"Common", type:"command", cost:1, ap:1, effect:"Draw a random Deathrattle Unit from your deck." },
+  { id:140, name:"Sacrifice Play",       rarity:"Common", type:"command", cost:2, ap:2, effect:"Destroy 1 friendly Unit (triggers its Deathrattle). Deal 2 HQ damage to your opponent instead of yourself." },
+  { id:141, name:"Scorched Earth Rally", rarity:"Common", type:"command", cost:3, ap:3, effect:"Destroy 1 friendly Unit (triggers its Deathrattle; you take 2 HQ damage as normal). Give all other friendly Units +1 all sides until your next turn." },
 
   // ── MISSIONS (retired 2026-07-30 — parked, not deleted; see cards.js header) ──
   { id:23, name:"Hold the Line",       rarity:"Common", type:"mission", cost:0, ap:0, req:"Control all objectives at end of your turn.",                                          reward:"Heal 5 HQ HP.", retired:true },
@@ -147,9 +172,9 @@ export const CARDS = [
   // No Hero Phase/activation/reinforcement logic wired yet; see cards.js header.
   { id:87,  name:"Quartermaster General",        rarity:"Common", type:"hero", scope:"board",  implemented:true,  powerType:"active",  activeCost:2, ability:"Draw 1 card.", direction:"Universal value; starter-readable." },
   { id:88,  name:"Operations Planner",           rarity:"Rare",   type:"hero", scope:"board",  implemented:false, powerType:"passive", activeCost:null, ability:"The first card you draw each turn may be put on the bottom of your deck. If you do, draw the next card.", direction:"Consistency without raw card advantage." },
-  { id:89,  name:"Logistics Chief",              rarity:"Rare",   type:"hero", scope:"board",  implemented:true,  powerType:"passive", activeCost:null, ability:"Your maximum stored Fuel is 8 instead of 6.", direction:"Expensive/ramp decks." },
+  { id:89,  name:"Logistics Chief",              rarity:"Rare",   type:"hero", scope:"board",  implemented:true,  powerType:"passive", activeCost:null, ability:"Your maximum stored Fuel is 11 instead of 9.", direction:"Expensive/ramp decks." },
   { id:90,  name:"Intelligence Officer",         rarity:"Rare",   type:"hero", scope:"board",  implemented:false, powerType:"active",  activeCost:1, ability:"Look at the opponent's hand.", direction:"Information/control. Needs an opponent hand-reveal UI (also blocks Radar Station)." },
-  { id:91,  name:"Field Engineer",               rarity:"Rare",   type:"hero", scope:"column", implemented:false, powerType:"active",  activeCost:1, ability:"Rotate one unsuppressed friendly Unit in this Hero's column 90 degrees.", direction:"Signature SIGNAL positioning. Needs a unit rotation mechanic, which does not exist." },
+  { id:91,  name:"Field Engineer",               rarity:"Rare",   type:"hero", scope:"column", implemented:true,  powerType:"active",  activeCost:1, ability:"Rotate one unsuppressed friendly Unit in this Hero's column 90 degrees, in either direction (your choice).", direction:"Signature SIGNAL positioning. Wired up 2026-08-17 — reuses Change Formation's (124) rotation mechanic." },
   { id:92,  name:"Tactical Commander",           rarity:"Common", type:"hero", scope:"column", implemented:true,  powerType:"active",  activeCost:1, ability:"A friendly Unit in this Hero's column gets +1 all sides this turn.", direction:"Simple positional starter Hero." },
   { id:93,  name:"Mobile Warfare Commander",     rarity:"Rare",   type:"hero", scope:"column", implemented:false, powerType:"passive", activeCost:null, ability:"After this Hero changes zones due to your Hero Phase reposition, the first Unit you play in this Hero's column this turn costs 1F less.", direction:"Rewards command movement. Wording normalised 2026-08-01 from 'its new column' — it was column-scoped in substance but read as board-scoped." },
   { id:94,  name:"Objective Marshal",            rarity:"Rare",   type:"hero", scope:"column", implemented:true,  powerType:"passive", activeCost:null, ability:"The first friendly Unit you play each turn in this Hero's column on or adjacent to an Objective gets +1 all sides until your next turn.", direction:"Objective control." },
@@ -169,6 +194,16 @@ export const CARDS = [
   { id:108, name:"Mission Commander",            rarity:"Rare",   type:"hero", scope:"board",  implemented:false, retired:true, powerType:"passive", activeCost:null, ability:"The first Mission you complete each turn gives you 1 Fuel.", direction:"Mission engine. Retired 2026-08-01 — dead card while Missions are retired; unpark if Missions return." },
   { id:109, name:"Combined Arms General",        rarity:"Rare",   type:"hero", scope:"board",  implemented:false, retired:true, powerType:"passive", activeCost:null, ability:"The first Unit you play each turn whose Class is different from the previous Unit you played gets +1 all sides until your next turn.", direction:"Mixed-class army. Retired 2026-08-14 — cut from the launch Hero roster." },
   { id:110, name:"Conventional Warfare Commander", rarity:"Rare", type:"hero", scope:"column", implemented:true,  powerType:"passive", activeCost:null, ability:"The first Vanilla Unit you play in this Hero's column each turn gets +1 all sides until your next turn.", direction:"Makes no-keyword units a strategy." },
+
+  // ── HEROES — Week 3 batch (added 2026-08-19, from Denis's Heroes_Week3 tab). Card names
+  // invented — the brainstorm rows had no names. One Week 3 draft ("Rotate a friendly Unit in
+  // this Column", 1F Active) was NOT added — it duplicates Field Engineer (91), already shipped.
+  // The "Weird AirCraft" crafting Hero (250) and its random roll table are explicitly parked,
+  // not implemented — see the Weird AirCraft tab and CLAUDE.md's Open design questions.
+  { id:142, name:"Fire Support Officer", rarity:"Rare", type:"hero", scope:"column", implemented:true, powerType:"active",  activeCost:1, ability:"Give a friendly Unit in this Hero's column Bombard until end of turn.", direction:"Column-scoped ranged-attack enabler." },
+  { id:143, name:"Supreme Commander",    rarity:"Rare", type:"hero", scope:"board",  implemented:true, powerType:"passive", activeCost:null, ability:"Your other Heroes' column-scoped powers affect your whole board instead of just their own column.", direction:"Board-wide payoff for stacking column Heroes. Column-scoped heroTargetKeys/applyHeroPower cases and combat.js's checkHeroPassivesOnPlace all check for this Hero via a shared column-freedom helper." },
+  { id:145, name:"Sector Commander",     rarity:"Rare", type:"hero", scope:"column", implemented:true, powerType:"active",  activeCost:3, ability:"All friendly Units in this Hero's column get +2 all sides until your next turn.", direction:"Brainstorm text said 'All Units' with no friendly/enemy qualifier — every other card in the set qualifies 'friendly' explicitly, so treated as an omission and restricted to friendly Units." },
+  { id:147, name:"Graves Registration Officer", rarity:"Rare", type:"hero", scope:"board", implemented:true, powerType:"passive", activeCost:null, ability:"Your Deathrattle effects trigger twice.", direction:"Brainstorm text: 'DeathRattle trigger twice.' Historically-flavored name (Graves Registration was a real WW2 unit role)." },
 ];
 
 export const CARD_BY_ID = Object.fromEntries(CARDS.map(c => [c.id, c]));

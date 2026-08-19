@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>SIGNAL — Digital Prototype</title>
-  <link rel="stylesheet" href="css/game.css?v=1786668083">
+  <link rel="stylesheet" href="css/game.css?v=1787182794">
 </head>
 <body>
   <!-- Sets the theme before anything paints — see the matching script/comment in index.html.
@@ -63,6 +63,11 @@
           <div class="deck-flavor">Open center, forest corners. The great tank battle.</div>
           <div class="deck-ap">Plains · Forest corners</div>
         </div>
+        <div class="deck-option" data-map="midway">
+          <div class="deck-name">Midway</div>
+          <div class="deck-flavor">Open ocean, no land at all. Naval, Aircraft, and Airborne units only.</div>
+          <div class="deck-ap">Water (all)</div>
+        </div>
       </div>
     </div>
   </div>
@@ -109,6 +114,14 @@
     <button class="btn btn-secondary" id="field-reserves-skip">Take None</button>
   </div>
 
+  <!-- ── ROTATE DIRECTION MODAL — Change Formation (124) / Field Engineer (91) ── -->
+  <div id="rotate-direction-modal" style="display:none;">
+    <div class="fo-title">CHOOSE ROTATION</div>
+    <div class="fo-subtitle">Rotate the unit 90° — pick a direction</div>
+    <button class="btn btn-primary" id="rotate-cw-btn">↻ Clockwise</button>
+    <button class="btn btn-primary" id="rotate-ccw-btn">↺ Counter-Clockwise</button>
+  </div>
+
   <!-- ── HERO DEPLOY MODAL ── -->
   <div id="hero-deploy-modal" style="display:none;">
     <div class="fo-title" id="hero-deploy-title">CHOOSE YOUR HERO</div>
@@ -145,6 +158,14 @@
         <input class="debug-input" id="debug-card-search" placeholder="Search card name…">
       </div>
       <div id="debug-card-results"></div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title">Remove Card from Hand</div>
+      <div class="debug-row">
+        <input class="debug-input" id="debug-card-remove-search" placeholder="Search current hand…">
+      </div>
+      <div id="debug-card-remove-results"></div>
     </div>
 
     <div class="debug-section">
@@ -194,6 +215,10 @@
           <option value="4">L4</option>
         </select>
         <button class="debug-btn" id="debug-obj-apply">Apply</button>
+      </div>
+      <div class="debug-row">
+        <select class="debug-input" id="debug-obj-card-select"></select>
+        <button class="debug-btn" id="debug-obj-card-apply">Change Card</button>
       </div>
     </div>
 
@@ -318,7 +343,7 @@
 
   </div>
 
-  <script type="module" src="./js/game.js?v=1786668083"></script>
+  <script type="module" src="./js/game.js?v=1787182794"></script>
 
 </body>
 </html>

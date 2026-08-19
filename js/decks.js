@@ -1,7 +1,7 @@
 // Deck rules, starter decks, validation, and custom-deck persistence.
 // Validation functions are pure (node-testable). localStorage helpers are
 // browser-only — never called at module top level.
-import { CARDS, CARD_BY_ID } from './cards.js?v=1786668083';
+import { CARDS, CARD_BY_ID } from './cards.js?v=1787182794';
 
 export const DECK_RULES = {
   deckSize: 30, // v0.4 fixed deck size (2026-07-30) — replaces the old 50-AP budget model. Exact, not a ceiling.
@@ -18,9 +18,7 @@ export const STARTER_DECKS = [
     // stripped in Batch 1 (removed 2x Total Onslaught), then filled back up to 30 with
     // cheap aggressive Commons already on-theme (Storm Squad to 2x, Rifle Squad, Scouts,
     // Radio Operator) rather than reworking the deck's identity.
-    // CLIENT BUILD ONLY (origin-release): 2x Radio Operator (111, untested v0.4 batch) swapped
-    // for 2x Light Skirmishers (71) — same class/cost, keeps the curve identical.
-    ids: [5,5, 42,42, 40,40, 19,19, 22,22, 10,10, 59,59, 1,1, 34,34, 71,71, 4,4, 13,13, 61,61, 52,52, 8,8],
+    ids: [5,5, 42,42, 40,40, 19,19, 22,22, 10,10, 59,59, 1,1, 34,34, 111,111, 4,4, 13,13, 61,61, 52,52, 8,8],
     // Fixed 4-Hero roster (not player-selectable yet — see Batch 4/5 scope notes in cards.js).
     // Rosters draw only from the implemented Tier 1 pool (see `implemented` in cards.js) so
     // every starter deck's Heroes actually do something. Reassigned 2026-08-03.
@@ -39,9 +37,7 @@ export const STARTER_DECKS = [
     flavor: 'Four Guard unit types wall off Double Attack. Armor absorbs Bombard. Cheap flood, full draw engine, Overrun punishes every kill.',
     // Rebuilt to exactly 30 cards (2026-07-30) — Missions stripped in Batch 1 (removed
     // 2x Blitz Assault, 2x Total Onslaught), filled back up with more cheap Guard bodies.
-    // CLIENT BUILD ONLY (origin-release): 2x Combat Engineers (112, untested v0.4 batch)
-    // swapped for 2x Reserve Infantry (72) — same class/cost, keeps the curve identical.
-    ids: [2,2, 11,11, 36,36, 43,43, 6,6, 69,69, 5,5, 1,1, 34,34, 22,22, 19,19, 73,73, 51,51, 62,62, 72,72],
+    ids: [2,2, 11,11, 36,36, 43,43, 6,6, 69,69, 5,5, 1,1, 34,34, 22,22, 19,19, 73,73, 51,51, 62,62, 112,112],
     heroIds: [87, 104, 101, 92], // Quartermaster General, Infantry Commander, Counteroffensive General, Tactical Commander
   },
   {
@@ -52,11 +48,7 @@ export const STARTER_DECKS = [
     // heavier grind pieces on-theme. 2x Tank Destroyer (41) swapped for 2x Flak Halftrack
     // (40) on 2026-08-13 — Tank Destroyer retired along with Breakthrough (unbalanced as
     // vanilla); Flak Halftrack keeps the slot in-class (Tank) and fills a cost-2 curve gap.
-    // CLIENT BUILD ONLY (origin-release): 2x Heavy Artillery Battery (117) and 2x Fighter-
-    // Bomber (116), both untested v0.4 batch, swapped for 2x Rocket Launcher (42, Artillery/
-    // Bombard) and 2x Fighter (12, Aircraft/Airborne) — same class and keyword identity,
-    // cost 3 instead of 4 (no tested cost-4 Artillery exists yet).
-    ids: [63,63, 66,66, 65,65, 39,39, 6,6, 9,9, 5,5, 76,76, 18,18, 45,45, 40,40, 42,42, 12,12, 64,64, 43,43],
+    ids: [63,63, 66,66, 65,65, 39,39, 6,6, 9,9, 5,5, 76,76, 18,18, 45,45, 40,40, 117,117, 116,116, 64,64, 43,43],
     // Combined Arms General (109) retired 2026-08-14 — swapped for Recovery Officer (100),
     // a closer fit for a grind-and-outlast deck (pairs with Field Medic on Suppression removal).
     heroIds: [89, 103, 100, 107], // Logistics Chief, Armored Commander, Recovery Officer, Command Specialist

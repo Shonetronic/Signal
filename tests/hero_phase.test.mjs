@@ -31,9 +31,9 @@ test('fuelCapOf is 6 with no Heroes deployed', () => {
   assert.equal(fuelCapOf({ fuelCap: 6, heroZones: [null, null, null, null] }), 6);
 });
 
-test('fuelCapOf is 8 with Logistics Chief deployed in any zone', () => {
-  assert.equal(fuelCapOf({ fuelCap: 6, heroZones: [null, 89, null, null] }), 8);
-  assert.equal(fuelCapOf({ fuelCap: 6, heroZones: [89, null, null, null] }), 8);
+test('fuelCapOf is 11 with Logistics Chief deployed in any zone', () => {
+  assert.equal(fuelCapOf({ fuelCap: 6, heroZones: [null, 89, null, null] }), 11);
+  assert.equal(fuelCapOf({ fuelCap: 6, heroZones: [89, null, null, null] }), 11);
 });
 
 test('fuelCapOf falls back to 6 when heroZones is absent (pre-Hero saved state)', () => {
@@ -65,6 +65,19 @@ test('Objective Marshal only fires once per turn, gated by heroTriggeredThisTurn
     board: boardWith({ '0,1': placedUnit() }), objectives };
   const { log } = checkHeroPassivesOnPlace(alreadyFired, 'p1', 0, '0,1', card);
   assert.equal(log.length, 0);
+});
+
+test('Supreme Commander (143) makes Objective Marshal (94) fire outside its own column', () => {
+  // 94 sits in column 0; Unit placed in column 3 — without freedom this must NOT fire.
+  const card = { ...CARD_BY_ID[1], cls: 'Artillery' };
+  const objectives = { '0,3': { cardId: 40, level: 1 } };
+  const noFreedom = { p1: playerState({ heroZones: [94, null, null, null] }), board: boardWith({ '0,3': placedUnit() }), objectives };
+  const { log: log1 } = checkHeroPassivesOnPlace(noFreedom, 'p1', 3, '0,3', card);
+  assert.equal(log1.length, 0, 'column 0 Hero must not affect column 3 without Supreme Commander');
+
+  const withFreedom = { p1: playerState({ heroZones: [94, null, null, 143] }), board: boardWith({ '0,3': placedUnit() }), objectives };
+  const { log: log2 } = checkHeroPassivesOnPlace(withFreedom, 'p1', 3, '0,3', card);
+  assert.equal(log2.length, 1, 'Supreme Commander deployed anywhere lifts the column restriction');
 });
 
 test('Infantry Commander (104) fires only for Infantry Units in its column', () => {

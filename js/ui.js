@@ -1,8 +1,21 @@
-import { CARD_BY_ID } from './cards.js?v=1786668083';
-import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir } from './state.js?v=1786668083';
-import { getTerrain } from './maps.js?v=1786668083';
+import { CARD_BY_ID } from './cards.js?v=1787182794';
+import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir } from './state.js?v=1787182794';
+import { getTerrain } from './maps.js?v=1787182794';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
+
+// Player-facing keyword rules text for the hover tooltip on .bc-kw-tag badges — see GDD
+// Section 7. Only mapped keywords get a data-tip attribute; an unmapped one (e.g. a future
+// keyword not yet documented here) silently shows no tooltip rather than an empty bubble.
+const KEYWORD_TEXT = {
+  'Armor': 'Absorbs 1 hit before Suppression — 3 hits total to destroy.',
+  'Heavy Armor': 'Absorbs 2 hits before Suppression — 4 hits total to destroy.',
+  'Guard': 'Adjacent enemies must attack this unit first.',
+  'Double Attack': 'This unit resolves two attacks per activation.',
+  'Bombard': 'Can attack any enemy in its row or column, not just adjacent tiles.',
+  'Airborne': 'Ignores terrain placement restrictions.',
+  'Deathrattle': 'When this Unit is Destroyed, its effect triggers immediately.',
+};
 
 // ── Board rendering ───────────────────────────────────────────────────────────
 
@@ -15,7 +28,7 @@ const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city:
 // recomputed per-viewer rotation. Stats shown on a placed card also never flip by owner
 // (see getSideValue in state.js) — a card's printed N/E/S/W always maps to physical
 // N/E/S/W, same as in hand.
-export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null) {
+export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null, transitionFlags = null) {
   const board = document.getElementById('board');
   board.innerHTML = '';
 
@@ -93,11 +106,14 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
 
       // Unit on tile
       if (unit) {
-        // Destroyed units are still shown (greyed out) so board state is clear
         tile.classList.add('has-unit');
-        tile.appendChild(buildBoardCard(unit));
-      } else if (validDropKeys?.has(key)) {
-        tile.classList.add('valid-drop');
+        tile.appendChild(buildBoardCard(unit, 'p1', transitionFlags?.get(key)));
+      } else {
+        if (validDropKeys?.has(key)) tile.classList.add('valid-drop');
+        // A destroyed unit is nulled out of state.board the instant it dies (see applyHit /
+        // resolveSingleAttack) — there's no lingering "destroyed" card to animate, so the
+        // flash plays on the now-empty tile itself instead.
+        if (transitionFlags?.get(key) === 'destroyed') tile.classList.add('tile-just-destroyed');
       }
 
       if (key === selectedTileKey) {
@@ -109,20 +125,20 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
   }
 }
 
-function buildBoardCard(unit, viewer = 'p1') {
+function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   const card = CARD_BY_ID[unit.cardId];
   const el = document.createElement('div');
   const buffed = unit.tempSideBonus > 0 || unit.grantedSideBonus > 0 || unit.debugSideBonus > 0 || (unit.tempKeywords?.length > 0) || (unit.grantedKeywords?.length > 0);
   const opponent = unit.owner !== viewer;
-  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${opponent ? ' opponent-card' : ''}`;
+  const justSuppressed = transitionFlag === 'suppressed' ? ' just-suppressed' : '';
+  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${opponent ? ' opponent-card' : ''}${justSuppressed}`;
 
   const kwList = getKeywords(unit);
-  const kwHtml = kwList.map(k => `<span class="bc-kw-tag">${k}</span>`).join('');
+  const kwHtml = kwList.map(k => `<span class="bc-kw-tag"${KEYWORD_TEXT[k] ? ` data-tip="${esc(KEYWORD_TEXT[k])}"` : ''}>${k}</span>`).join('');
   const abilityHtml = card.ability
     ? `<span class="bc-ability-pip" data-tip="${esc(card.ability)}">⚡</span>`
     : '';
   const bonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.objSideBonus || 0) + (unit.debugSideBonus || 0);
-  const objBonus = unit.objSideBonus || 0;
   const maxArmor = maxArmorHits(unit);
   const remaining = maxArmor - unit.armorHits;
   const armorPips = maxArmor > 0
@@ -132,28 +148,33 @@ function buildBoardCard(unit, viewer = 'p1') {
     : '';
 
   const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR', Commander:'CMD', Naval:'NAV' };
-  const dc = objBonus > 0 ? ' class="bc-dir-buffed"' : '';
   // rotatedDir only (Change Formation 124 / Field Engineer 91) — no owner/viewer swap.
   // A card's printed N/E/S/W always shows at physical N/E/S/W, matching hand and getSideValue
   // (see state.js — the matching P2_FLIP there was removed 2026-08-14 for the same reason).
   const rn = rotatedDir('n', unit.rotation), re = rotatedDir('e', unit.rotation);
   const rs = rotatedDir('s', unit.rotation), rw = rotatedDir('w', unit.rotation);
-  const dn = card[rn] + bonus;
-  const ds = card[rs] + bonus;
-  const de = card[re] + bonus;
-  const dw = card[rw] + bonus;
+  const baseN = card[rn], baseE = card[re], baseS = card[rs], baseW = card[rw];
+  const dn = baseN + bonus;
+  const ds = baseS + bonus;
+  const de = baseE + bonus;
+  const dw = baseW + bonus;
+  // Any side no longer matching its printed value is flagged gold (increased) or red
+  // (decreased) — every stat-changing effect (objective bonuses, Hero bonuses, command
+  // effects, the debug panel) funnels through the same tempSideBonus/grantedSideBonus/
+  // objSideBonus/debugSideBonus fields, so one comparison per side covers all of them.
+  const dirClass = (val, base) => val > base ? ' class="bc-dir-up"' : val < base ? ' class="bc-dir-down"' : '';
   if (card && card.type === 'unit') {
     el.innerHTML = `
       <div class="bc-name">${card.name}</div>
       <div class="bc-dirs">
         <div></div>
-        <div${dc}>${dn}</div>
+        <div${dirClass(dn, baseN)}>${dn}</div>
         <div></div>
-        <div${dc}>${dw}</div>
+        <div${dirClass(dw, baseW)}>${dw}</div>
         <div class="bc-cls">${CLS_ABBR[card.cls] ?? card.cls}</div>
-        <div${dc}>${de}</div>
+        <div${dirClass(de, baseE)}>${de}</div>
         <div></div>
-        <div${dc}>${ds}</div>
+        <div${dirClass(ds, baseS)}>${ds}</div>
         <div></div>
       </div>
       ${(kwHtml || abilityHtml) ? `<div class="bc-keyword-row">${kwHtml}${abilityHtml}</div>` : ''}
@@ -195,18 +216,31 @@ export function renderHand(handCardIds, containerId, selectedCardId, extras = {}
         ? `<span class="hc-cost-discounted">${displayCost} ⛽</span>`
         : `${displayCost} ⛽`;
       if (discount > 0) div.classList.add('hc-tank-discounted');
+      // Pending stat buff (Deathrattle: Convoy Escort 138) — queued for the next matching
+      // class played, ANY copy in hand (not just one arbitrarily marked). Sums every matching
+      // entry (checkPendingUnitBuff in combat.js does the same when it's actually consumed) so
+      // a doubled trigger shows the full stacked amount. Shown as boosted N/E/S/W numbers in
+      // gold, same convention as buildBoardCard's bc-dir-up — not a separate badge (2026-08-20
+      // correction, per Filip: "in hand all navals should have increased stats... not like now").
+      const pendingBuff = (extras.playerState?.pendingUnitBuffs ?? [])
+        .filter(b => b.appliesTo === card.cls)
+        .reduce((sum, b) => sum + b.amount, 0);
+      if (pendingBuff > 0) div.classList.add('hc-buff-pending');
+      const dn = card.n + pendingBuff, de = card.e + pendingBuff, ds = card.s + pendingBuff, dw = card.w + pendingBuff;
+      const dirClass = pendingBuff > 0 ? ' class="bc-dir-up"' : '';
+      const dirTip = pendingBuff > 0 ? ` data-tip="Queued bonus: +${pendingBuff} all sides when this is played"` : '';
       div.innerHTML = `
         <div class="hc-header">${card.name}</div>
         <div class="hc-cost">${costHtml}</div>
         <div class="hc-type">${card.cls}</div>
-        <div class="hc-dirs">
-          <div></div><div>${card.n}</div><div></div>
-          <div>${card.w}</div><div style="color:#444">·</div><div>${card.e}</div>
-          <div></div><div>${card.s}</div><div></div>
+        <div class="hc-dirs"${dirTip}>
+          <div></div><div${dirClass}>${dn}</div><div></div>
+          <div${dirClass}>${dw}</div><div style="color:#444">·</div><div${dirClass}>${de}</div>
+          <div></div><div${dirClass}>${ds}</div><div></div>
         </div>
         ${(() => {
         const kws = card.keyword ? (Array.isArray(card.keyword) ? card.keyword : [card.keyword]) : [];
-        const kwTags = kws.map(k => `<span class="bc-kw-tag">${k}</span>`).join('');
+        const kwTags = kws.map(k => `<span class="bc-kw-tag"${KEYWORD_TEXT[k] ? ` data-tip="${esc(KEYWORD_TEXT[k])}"` : ''}>${k}</span>`).join('');
         const abilityTag = card.ability ? `<span class="bc-ability-pip" data-tip="${esc(card.ability)}">⚡</span>` : '';
         return (kwTags || abilityTag) ? `<div class="bc-keyword-row">${kwTags}${abilityTag}</div>` : '';
       })()}
@@ -273,9 +307,13 @@ export function heroCardHtml(card) {
   </div>`;
 }
 
-export function heroPlacedHtml(card, owner, { ready = false, spent = false, picked = false } = {}) {
+export function heroPlacedHtml(card, owner, { ready = false, spent = false, picked = false, effectiveCost = null } = {}) {
+  // effectiveCost reflects Priority Orders' discount / Radio Interference's tax on THIS
+  // player's THIS column, when known (see renderHeroZones) — falls back to the printed cost.
+  const shownCost = effectiveCost ?? card.activeCost;
+  const costChanged = effectiveCost != null && effectiveCost !== card.activeCost;
   const cost = card.powerType === 'active'
-    ? `<span class="hp-cost">${card.activeCost}⛽</span>`
+    ? `<span class="hp-cost${costChanged ? (shownCost < card.activeCost ? ' hp-cost-down' : ' hp-cost-up') : ''}">${shownCost}⛽</span>`
     : `<span class="hp-passive">PASSIVE</span>`;
   const cls = `${owner}${ready ? ' ready' : ''}${spent ? ' spent' : ''}${picked ? ' picked' : ''}`;
   return `<div class="hero-placed ${cls}" data-hero-id="${card.id}">
@@ -292,7 +330,8 @@ export function renderHeroZones(state, selectedZone = null) {
   for (const role of ['p1', 'p2']) {
     const strip = document.getElementById(`hero-zone-${role}`);
     if (!strip) continue;
-    const zones = state[role]?.heroZones ?? [null, null, null, null];
+    const ps = state[role];
+    const zones = ps?.heroZones ?? [null, null, null, null];
     const isTheirTurn = state.initiative === role;
     strip.innerHTML = zones.map((heroId, col) => {
       const card = heroId != null ? CARD_BY_ID[heroId] : null;
@@ -301,11 +340,20 @@ export function renderHeroZones(state, selectedZone = null) {
       if (!card) {
         return `<div class="hero-zone-slot${isDropTarget ? ' drop-target' : ''}" data-hero-zone="${role}-${col}">HERO</div>`;
       }
-      // Gold glow marks an activated power still available — only meaningful on your turn.
-      const ready = isTheirTurn && card.powerType === 'active' && !state[role].heroActivated;
-      const spent = isTheirTurn && card.powerType === 'active' && state[role].heroActivated;
+      // Gold glow marks an activated power still available — per-Hero now (2026-08-17): each
+      // deployed Hero tracks its own activation, so a spent Hero no longer dims its column-mates.
+      const activatedThisTurn = ps.heroesActivatedThisTurn ?? [];
+      const alreadyUsed = activatedThisTurn.includes(heroId);
+      const ready = isTheirTurn && card.powerType === 'active' && !alreadyUsed;
+      const spent = isTheirTurn && card.powerType === 'active' && alreadyUsed;
       const picked = isTheirTurn && selectedZone === col;
-      return `<div class="hero-zone-slot filled${isDropTarget ? ' drop-target' : ''}" data-hero-zone="${role}-${col}">${heroPlacedHtml(card, role, { ready, spent, picked })}</div>`;
+      // Effective cost accounts for Priority Orders (121)/Radio Interference (123), so the
+      // number shown before activating matches what actually gets charged — previously always
+      // showed the flat printed cost, which read as "broken" when a discount/tax was pending.
+      const discount = ps.pendingHeroDiscount ?? 0;
+      const tax = (ps.heroTaxedColumns ?? {})[col] ?? 0;
+      const effectiveCost = card.powerType === 'active' ? Math.max(0, (card.activeCost ?? 0) - discount + tax) : null;
+      return `<div class="hero-zone-slot filled${isDropTarget ? ' drop-target' : ''}" data-hero-zone="${role}-${col}">${heroPlacedHtml(card, role, { ready, spent, picked, effectiveCost })}</div>`;
     }).join('');
   }
 }

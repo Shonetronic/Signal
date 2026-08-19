@@ -2,10 +2,11 @@
 // grid: [row][col], row 0 = top (P2 side), row 3 = bottom (P1 side).
 // Terrain types: 'plains' | 'forest' | 'desert' | 'city' | 'water'
 //
-// Placement rules (enforced in game.html):
+// Placement rules (enforced in canPlaceOnTerrain below):
 //   water  → Naval, Aircraft, or Airborne keyword only
 //   forest → no Tank class (Airborne bypasses)
-//   desert / city / plains → any unit
+//   desert / city / plains → any unit EXCEPT Naval — Naval is water-ONLY (2026-08-19)
+//   Naval  → water only, no exceptions besides Airborne (which no Naval card currently has)
 
 const P = 'plains', F = 'forest', D = 'desert', C = 'city', W = 'water';
 
@@ -30,7 +31,7 @@ export const MAPS = {
       [P, C, C, W],
       [P, P, C, W],
     ],
-    objectiveSlots: ["0,0", "1,1", "3,2"],
+    objectiveSlots: ["0,0", "3,2"],
   },
   el_alamein: {
     name: "El Alamein",
@@ -41,7 +42,7 @@ export const MAPS = {
       [D, D, D, D],
       [D, D, D, D],
     ],
-    objectiveSlots: ["0,1", "1,3", "3,1"],
+    objectiveSlots: ["0,0", "0,3", "3,0", "3,3"],
   },
   ardennes: {
     name: "Ardennes",
@@ -52,7 +53,11 @@ export const MAPS = {
       [F, F, P, F],
       [F, F, P, F],
     ],
-    objectiveSlots: ["0,1", "2,2", "3,2"],
+    // "1,2" and "2,1" sit in the central forest, each touching BOTH plains corridors
+    // (1,2 is adjacent to 1,1 and 2,2; 2,1 is adjacent to 1,1 and 2,2) — contestable from
+    // either corridor without an objective tile ever sitting ON the path itself and
+    // narrowing it further. Per Filip 2026-08-19.
+    objectiveSlots: ["1,2", "2,1"],
   },
   kursk: {
     name: "Kursk",
@@ -63,7 +68,27 @@ export const MAPS = {
       [P, P, P, P],
       [F, P, P, F],
     ],
-    objectiveSlots: ["0,1", "1,2", "3,2"],
+    // Diagonal pair, top-left to bottom-right, within the open-plains center (clear of the
+    // forest corners) — trimmed from the 4-corner rectangle down to 2. Per Filip 2026-08-19.
+    objectiveSlots: ["1,0", "2,3"],
+  },
+  midway: {
+    name: "Midway",
+    flavor: "Open ocean. No land at all — Naval, Aircraft, and Airborne units only.",
+    grid: [
+      [W, W, W, W],
+      [W, W, W, W],
+      [W, W, W, W],
+      [W, W, W, W],
+    ],
+    // 4, dead center (the 2x2 middle block) — the carrier task forces converging. Per Filip 2026-08-19.
+    objectiveSlots: ["1,1", "1,2", "2,1", "2,2"],
+    // Factory (26, category "Economy/Vehicle") buffs Tanks; City (31, "Infantry/Defense") buffs
+    // Infantry — both dead weight here since neither class can ever be placed on 100% water.
+    // Per Filip 2026-08-19. Only 3 of the 5 working objectives remain valid for 4 slots, so one
+    // objective type repeats among Midway's slots — see the % in pickObjectives (game.js),
+    // already built to handle a map needing more slots than its available pool.
+    objectiveExclude: [26, 31],
   },
 };
 
@@ -75,8 +100,11 @@ export function getTerrain(mapId, row, col) {
 export function canPlaceOnTerrain(card, terrainType) {
   if (!card) return false;
   if (card.keyword === 'Airborne') return true;       // Airborne bypasses all terrain
+  // Naval is water-ONLY — locked 2026-08-19, per Filip. Before this, Naval was allowed
+  // anywhere non-water was unrestricted (plains/desert/city), same as ground classes.
+  if (card.cls === 'Naval') return terrainType === 'water';
   if (terrainType === 'water') {
-    return card.cls === 'Naval' || card.cls === 'Aircraft';
+    return card.cls === 'Aircraft'; // Naval already handled above
   }
   if (terrainType === 'forest') {
     return card.cls !== 'Tank';

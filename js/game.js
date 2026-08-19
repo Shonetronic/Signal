@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS } from './cards.js?v=1786668083';
+import { CARD_BY_ID, CARDS } from './cards.js?v=1787182794';
 import {
   createInitialState,
   startOfTurn,
@@ -18,14 +18,16 @@ import {
   discountFor,
   consumeDiscounts,
   addDiscount,
-} from './state.js?v=1786668083';
-import { getAttackableTargets, resolveSingleAttack, tileKey, unitsInColumn, unitsOnBoard, checkHeroPassivesOnPlace, removeSuppression, checkUnitOnPlayAbility, checkCounteroffensiveGeneral } from './combat.js?v=1786668083';
-import { renderBoard, renderHand, renderHQ, appendLog, heroCardHtml, renderHeroZones } from './ui.js?v=1786668083';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1786668083';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1786668083';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn } from './debug.js?v=1786668083';
-import { STARTER_DECKS, loadCustomDecks, validateDeck, validateHeroRoster } from './decks.js?v=1786668083';
-import { runBotTurn } from './bot_player.js?v=1786668083';
+  shuffle,
+} from './state.js?v=1787182794';
+import { getAttackableTargets, resolveSingleAttack, tileKey, unitsInColumn, unitsOnBoard, checkHeroPassivesOnPlace, removeSuppression, checkUnitOnPlayAbility, checkCounteroffensiveGeneral, canStrikeHQDirectly, resolveEmptyBoardStrike, checkDeathrattle, checkPendingUnitBuff, hasColumnFreedom } from './combat.js?v=1787182794';
+import { renderBoard, renderHand, renderHQ, appendLog, heroCardHtml, renderHeroZones } from './ui.js?v=1787182794';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1787182794';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby } from './firebase.js?v=1787182794';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetObjectiveCard, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn, debugRemoveCard } from './debug.js?v=1787182794';
+import { STARTER_DECKS, loadCustomDecks, validateDeck, validateHeroRoster } from './decks.js?v=1787182794';
+import { runBotTurn } from './bot_player.js?v=1787182794';
+import { bestHeroDeployment } from './bot_ai.js?v=1787182794';
 
 // ── Deck selection ────────────────────────────────────────────────────────────
 // Tiles are rendered from STARTER_DECKS + saved custom decks. Custom decks are
@@ -80,14 +82,25 @@ renderDeckGrid();
 // Bridge (29), Radar Station (30), Fortification (33) excluded — effects not automated yet.
 const WORKING_OBJECTIVE_IDS = [26, 27, 28, 31, 32];
 
-function pickObjectives(_mapId) {
-  const leftRow = Math.random() < 0.5 ? 1 : 2;
-  const rightRow = leftRow === 1 ? 2 : 1;
-  const slots = [`${leftRow},0`, `${rightRow},3`];
-  const shuffled = [...WORKING_OBJECTIVE_IDS].sort(() => Math.random() - 0.5);
+// Objective tile positions are fixed per map (MAPS[mapId].objectiveSlots — see maps.js);
+// the CARD assigned to each position is randomized from the auto-resolving pool at match
+// start. Was previously hardcoded to always 2 slots at a random symmetric position
+// regardless of map (`_mapId` was unused) — maps.js's per-map objectiveSlots existed but
+// were dead data until 2026-08-19, when map-specific counts (1-4, varies by map) were wired
+// up for real. A map may also set `objectiveExclude: [id, ...]` (e.g. Midway excludes
+// Factory/City — their Tank/Infantry bonuses are dead weight on an all-water board) to draw
+// from a narrower pool than the other maps. `% shuffled.length` guards a map whose slot
+// count exceeds its (possibly narrowed) pool size, reusing an id rather than assigning
+// undefined — Midway needs exactly this, 4 slots drawing from only 3 valid objectives.
+function pickObjectives(mapId) {
+  const map = MAPS[mapId];
+  const slots = map?.objectiveSlots ?? [];
+  const exclude = map?.objectiveExclude ?? [];
+  const pool = exclude.length ? WORKING_OBJECTIVE_IDS.filter(id => !exclude.includes(id)) : WORKING_OBJECTIVE_IDS;
+  const shuffled = shuffle(pool);
   const objectives = {};
   slots.forEach((slot, i) => {
-    objectives[slot] = { cardId: shuffled[i], level: 1 };
+    objectives[slot] = { cardId: shuffled[i % shuffled.length], level: 1 };
   });
   return objectives;
 }
@@ -268,6 +281,7 @@ let pendingCommandId = null;       // card ID of command awaiting a board target
 let preCommandState = null;        // state snapshot before command-targeting started (for cancel)
 let pendingRallyCryCount = 0;      // remaining Rally Cry target picks (0 = not active)
 let lastChangedKeys = new Set();   // tiles changed by opponent's last move (cleared on own action)
+let lastTransitionFlags = new Map(); // tileKey -> 'suppressed'|'destroyed' this commit, for a one-shot render animation
 let gameOver = false;
 
 // ── Forward Observer state ─────────────────────────────────────────────────────
@@ -293,7 +307,7 @@ function applyMulligan(s, role, indices) {
   const ps = { ...s[role] };
   const putBack = indices.map(i => ps.hand[i]);
   const keep = ps.hand.filter((_, i) => !indices.includes(i));
-  const newDeck = [...putBack, ...ps.deck].sort(() => Math.random() - 0.5);
+  const newDeck = shuffle([...putBack, ...ps.deck]);
   const drawn = newDeck.slice(0, putBack.length);
   return { ...s, [role]: { ...ps, hand: [...keep, ...drawn], deck: newDeck.slice(putBack.length) } };
 }
@@ -462,7 +476,10 @@ function runHeroPhase(role) {
   };
 
   if (isAiMode && role === 'p2') {
-    finish(roster[0], (ps.heroZones ?? []).findIndex(z => z == null));
+    const choice = bestHeroDeployment(state, role, roster, ps.heroZones ?? [null, null, null, null]);
+    const heroId = choice?.heroId ?? roster[0];
+    const col = choice?.col ?? (ps.heroZones ?? []).findIndex(z => z == null);
+    finish(heroId, col);
     return;
   }
 
@@ -681,9 +698,9 @@ function redraw() {
   renderHQ(state);
 
   if (uiState === "placing") {
-    renderBoard(state, null, getValidTiles(), lastChangedKeys);
+    renderBoard(state, null, getValidTiles(), lastChangedKeys, lastTransitionFlags);
   } else {
-    renderBoard(state, null, null, lastChangedKeys);
+    renderBoard(state, null, null, lastChangedKeys, lastTransitionFlags);
   }
 
   if (uiState === "targeting" && pendingAttackerKey) {
@@ -766,8 +783,9 @@ function syncArtyTargetingUiState() {
   }
 }
 
-function commitState(newState, logLines) {
+function commitState(newState, logLines, transitionFlags) {
   lastChangedKeys = new Set(); // player acted — clear opponent highlights
+  lastTransitionFlags = transitionFlags ?? new Map();
   state = { ...newState, log: [...(newState.log ?? []), ...(logLines ?? [])] };
   if (logLines?.length) appendLog(logLines);
   syncArtyTargetingUiState();
@@ -810,8 +828,9 @@ function normalizeFirebaseState(raw) {
     missions: toArray(p.missions),
     heroRoster: toArray(p.heroRoster),
     heroZones:  fixZones(p.heroZones),
-    heroesActivatedEver: toArray(p.heroesActivatedEver),
+    heroesActivatedThisTurn: toArray(p.heroesActivatedThisTurn),
     pendingDiscounts: toArray(p.pendingDiscounts),
+    pendingUnitBuffs: toArray(p.pendingUnitBuffs),
   } : p;
   return {
     ...raw,
@@ -825,6 +844,7 @@ function normalizeFirebaseState(raw) {
 function receiveRemoteState(remoteState) {
   const normalized = normalizeFirebaseState(remoteState);
   const prevLogLen = state?.log?.length ?? 0;
+  const prevInitiative = state?.initiative;
   // Track tiles changed by the opponent so we can highlight them
   if (state?.board) {
     lastChangedKeys = new Set();
@@ -855,8 +875,12 @@ function receiveRemoteState(remoteState) {
   checkWin();
   // The opponent's End Turn handler can't prompt us, so an inbound state that hands us the
   // turn is where this client runs its own Hero Phase. runHeroPhase re-checks lastObjLevel,
-  // so arriving at the same state twice can't double-deploy.
-  if (isOnline && !gameOver && normalized.initiative === myRole) {
+  // so arriving at the same state twice can't double-deploy. Gated on the initiative actually
+  // CHANGING (not just "currently my turn") — was previously re-firing the "YOUR TURN" toast
+  // on every remote sync received while it was already your turn (e.g. the opponent poking the
+  // debug panel mid-turn), reported 2026-08-19: "when other player adds or removes card, to me
+  // it flashes your turn."
+  if (isOnline && !gameOver && normalized.initiative === myRole && prevInitiative !== normalized.initiative) {
     showTurnToast('YOUR TURN');
     runHeroPhase(myRole);
   }
@@ -875,18 +899,30 @@ function checkWin() {
 }
 
 // ── Hero powers ───────────────────────────────────────────────────────────────
+// Column-scoped candidate list for a Hero's own column, OR the whole board if Supreme
+// Commander (143) is deployed — see hasColumnFreedom in combat.js. Shared by every
+// column-scoped active Hero below (91/92/100/142) so "column freedom" has one definition.
+function scopedUnits(s, role, col, filterFn) {
+  const list = hasColumnFreedom(s[role]) ? unitsOnBoard(s, role) : unitsInColumn(s, col, role);
+  return filterFn ? list.filter(filterFn) : list;
+}
+
 // Tile keys a column-scoped active power can legally target. null = no target needed
 // (an instant), [] = needs a target but none exists right now.
 function heroTargetKeys(s, role, col, hero) {
   switch (hero.id) {
     case 92: // Tactical Commander — any friendly unit in the column
-      return unitsInColumn(s, col, role).map(u => u.key);
+      return scopedUnits(s, role, col).map(u => u.key);
     case 99: // Garrison Commander — friendly unit adjacent to (not on) an Objective, board-wide
       return unitsOnBoard(s, role)
         .filter(({ key }) => getAdjacentKeys(key).some(k => s.objectives[k]))
         .map(u => u.key);
     case 100: // Recovery Officer — only a suppressed friendly unit is worth targeting
-      return unitsInColumn(s, col, role).filter(({ unit }) => unit.state === 'suppressed').map(u => u.key);
+      return scopedUnits(s, role, col, ({ unit }) => unit.state === 'suppressed').map(u => u.key);
+    case 91: // Field Engineer — any unsuppressed friendly unit in the column (rotates it)
+      return scopedUnits(s, role, col, ({ unit }) => unit.state === 'normal').map(u => u.key);
+    case 142: // Fire Support Officer — any friendly unit in the column (grants Bombard)
+      return scopedUnits(s, role, col).map(u => u.key);
     default:
       return null;
   }
@@ -935,19 +971,35 @@ function applyHeroPower(s, role, col, hero, targetKey) {
       break;
     }
 
+    case 142: { // Fire Support Officer — grant Bombard until end of turn
+      const u = s.board[targetKey];
+      log.push(`${hero.name}: ${nameOf(targetKey)} gains Bombard (until end of turn)`);
+      s = { ...s, board: { ...s.board, [targetKey]: { ...u, tempKeywords: [...(u.tempKeywords || []), 'Bombard'] } } };
+      break;
+    }
+
+    case 145: { // Sector Commander — all friendly units in this column +2 all sides
+      const cols = scopedUnits(s, role, col);
+      const newBoard = { ...s.board };
+      for (const { key: k, unit: u } of cols) {
+        newBoard[k] = { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 2, sideBonusTurns: 1 };
+      }
+      s = { ...s, board: newBoard };
+      log.push(`${hero.name}: ${cols.length} friendly unit(s) +2 all sides (until your next turn)`);
+      break;
+    }
+
     default:
       log.push(`${hero.name}: power not automated yet`);
   }
 
-  const everBefore = s[role].heroesActivatedEver ?? [];
+  const activatedBefore = s[role].heroesActivatedThisTurn ?? [];
   return {
     state: {
       ...s,
       [role]: {
         ...s[role],
-        heroActivated: true,
-        heroActivatedId: hero.id,
-        heroesActivatedEver: everBefore.includes(hero.id) ? everBefore : [...everBefore, hero.id],
+        heroesActivatedThisTurn: activatedBefore.includes(hero.id) ? activatedBefore : [...activatedBefore, hero.id],
       },
     },
     log,
@@ -961,10 +1013,10 @@ function tryActivateHero(role, col) {
   const hero = heroId != null ? CARD_BY_ID[heroId] : null;
   if (!hero || hero.powerType !== 'active') return false;
   if (!hero.implemented) { appendLog([`${hero.name}: power not automated yet`]); return true; }
-  // Coordinated Orders (126) lets ONE extra activation through the normal once-per-turn
-  // lock, but only for a different Hero than whichever already activated this turn.
-  const usingExtra = ps.heroActivated && ps.extraHeroActivation && heroId !== ps.heroActivatedId;
-  if (ps.heroActivated && !usingExtra) { appendLog(['Hero Power already used this turn']); return true; }
+  // Each Hero may activate once per turn; different Heroes may each activate in the same
+  // turn (locked 2026-08-17 — see state.js's heroesActivatedThisTurn).
+  const activatedThisTurn = ps.heroesActivatedThisTurn ?? [];
+  if (activatedThisTurn.includes(heroId)) { appendLog([`${hero.name}: power already used this turn`]); return true; }
 
   // Priority Orders (121) discounts, Radio Interference (123) taxes — both apply once,
   // to this one activation, then clear. min 0 per Priority Orders' own wording.
@@ -978,14 +1030,12 @@ function tryActivateHero(role, col) {
   const costModLog = [];
   if (discount > 0) costModLog.push(`Priority Orders: -${discount}F`);
   if (tax > 0) costModLog.push(`Radio Interference: +${tax}F`);
-  if (usingExtra) costModLog.push(`Coordinated Orders: extra Hero Power activation`);
   const spendCostMods = playerState => {
     const { [col]: _taxed, ...restTaxed } = playerState.heroTaxedColumns ?? {};
     return {
       ...playerState,
       pendingHeroDiscount: 0,
       heroTaxedColumns: restTaxed,
-      extraHeroActivation: usingExtra ? false : playerState.extraHeroActivation,
     };
   };
 
@@ -1021,12 +1071,17 @@ function resolveHeroTargeting(clickedKey) {
   if (!pendingHeroTargets?.has(clickedKey)) return;
   const role = state.initiative;
   const hero = CARD_BY_ID[pendingHeroId];
-  const { state: next, log } = applyHeroPower(state, role, pendingHeroColumn, hero, clickedKey);
+  const col = pendingHeroColumn;
   pendingHeroId = null;
   pendingHeroColumn = null;
   pendingHeroTargets = null;
   preCommandState = null;
   uiState = 'idle';
+  if (hero.id === 91) { // Field Engineer — rotate, direction chosen via modal (see Change Formation)
+    showRotateDirectionModal({ kind: 'hero', targetKey: clickedKey, cardName: hero.name, s: state, log: [], role, heroId: hero.id });
+    return;
+  }
+  const { state: next, log } = applyHeroPower(state, role, col, hero, clickedKey);
   commitState(next, log);
 }
 
@@ -1237,8 +1292,15 @@ document.getElementById('board').addEventListener('click', e => {
       const coGen = checkCounteroffensiveGeneral(newS, clickedKey);
       newS = coGen.state;
       log.push(...coGen.log);
+    } else if (finalUnit === null) {
+      const dr = checkDeathrattle(newS, clickedKey, unit);
+      newS = dr.state;
+      log.push(...dr.log);
     }
-    commitState(newS, log);
+    const artyTransitionFlags = new Map();
+    if (finalUnit === null) artyTransitionFlags.set(clickedKey, 'destroyed');
+    else if (newUnit.state === 'suppressed') artyTransitionFlags.set(clickedKey, 'suppressed');
+    commitState(newS, log, artyTransitionFlags);
     checkWin();
     return;
   }
@@ -1316,6 +1378,15 @@ document.getElementById('board').addEventListener('click', e => {
       state = afterOnPlay;
     }
 
+    // Deathrattle: Convoy Escort (138) — a queued "next Naval Unit +1 all sides" bonus.
+    const { state: afterUnitBuff, log: unitBuffLog } = checkPendingUnitBuff(state, active, clickedKey, card);
+    if (unitBuffLog.length > 0) {
+      state = { ...afterUnitBuff, log: [...(afterUnitBuff.log ?? []), ...unitBuffLog] };
+      appendLog(unitBuffLog);
+    } else {
+      state = afterUnitBuff;
+    }
+
     // Mobile Command Halftrack (114) — on-play, offers to move a Hero into this (empty)
     // column. Needs UI state (which card.id checks can't set), so it stays here rather
     // than in checkUnitOnPlayAbility.
@@ -1351,6 +1422,19 @@ document.getElementById('board').addEventListener('click', e => {
     if (targets.length > 0) {
       uiState = "targeting";
       pendingAttackerKey = clickedKey;
+    } else if (canStrikeHQDirectly(state, clickedKey)) {
+      const hits = getKeywords(state.board[clickedKey]).includes('Double Attack') ? 2 : 1;
+      const result = resolveEmptyBoardStrike(state, clickedKey, hits);
+      state = {
+        ...state,
+        p1: { ...state.p1, hq: state.p1.hq - result.hqDamageToP1 },
+        p2: { ...state.p2, hq: state.p2.hq - result.hqDamageToP2 },
+        log: [...(state.log ?? []), ...result.logEntries],
+      };
+      attackedThisTurn.set(clickedKey, hits);
+      appendLog(result.logEntries);
+      uiState = "idle";
+      pendingAttackerKey = null;
     } else {
       uiState = "idle";
       pendingAttackerKey = null;
@@ -1428,6 +1512,18 @@ document.getElementById('board').addEventListener('click', e => {
       }
     }
 
+    // Deathrattle — the destroyed unit (if any) gets its on-death effect. `state` (the outer
+    // module var) is still the PRE-mutation snapshot here — commitState() hasn't run yet.
+    let deathrattleLog = [];
+    if (wasDestroyed) {
+      const dyingKey = result.boardMutations.find(m => m.newUnit === null)?.key;
+      if (dyingKey) {
+        const dr = checkDeathrattle(newState, dyingKey, state.board[dyingKey]);
+        newState = dr.state;
+        deathrattleLog = dr.log;
+      }
+    }
+
     // Counteroffensive General (101) — first friendly unit to get Suppressed this turn
     let coGenLog = [];
     if (newState.board[clickedKey]?.state === 'suppressed') {
@@ -1436,7 +1532,26 @@ document.getElementById('board').addEventListener('click', e => {
       coGenLog = coGen.log;
     }
 
-    if (isDoubleAttack && attackCount < 2 && postAttackTargets.length > 0) {
+    // Double Attack's 2nd hit had a real target a moment ago (postAttackTargets was computed
+    // above) but the 1st hit just emptied the board — don't lose the 2nd attack, resolve it as
+    // an Empty-Board HQ Strike instead of dropping straight to idle. hits=1 (not re-derived
+    // from the keyword) since the 1st hit already consumed one of this unit's two attacks.
+    // Applied directly to newState.p1/p2.hq, deliberately AFTER the Overrun-bonus block above
+    // (which only covers the 1st hit's damage) — an HQ strike isn't a Suppress/Destroy event,
+    // so it must never pass back through that check.
+    let hqStrikeLog = [];
+    if (isDoubleAttack && attackCount < 2 && postAttackTargets.length === 0 && canStrikeHQDirectly(newState, attackerKey)) {
+      const strikeResult = resolveEmptyBoardStrike(newState, attackerKey, 1);
+      newState = {
+        ...newState,
+        p1: { ...newState.p1, hq: newState.p1.hq - strikeResult.hqDamageToP1 },
+        p2: { ...newState.p2, hq: newState.p2.hq - strikeResult.hqDamageToP2 },
+      };
+      hqStrikeLog = strikeResult.logEntries;
+      attackedThisTurn.set(attackerKey, 2);
+      uiState = "idle";
+      pendingAttackerKey = null;
+    } else if (isDoubleAttack && attackCount < 2 && postAttackTargets.length > 0) {
       uiState = "targeting";
       pendingAttackerKey = attackerKey;
     } else {
@@ -1444,7 +1559,17 @@ document.getElementById('board').addEventListener('click', e => {
       pendingAttackerKey = null;
     }
 
-    commitState(newState, [...result.logEntries, ...overrunLog, ...bonusLog, ...coGenLog]);
+    // result.boardMutations always targets clickedKey — newUnit===null means destroyed,
+    // otherwise .state tells us whether this specific hit just suppressed it (vs. an
+    // armor-absorb hit, which changes armorHits but not .state and shouldn't animate).
+    const transitionFlags = new Map();
+    if (result.boardMutations.length > 0) {
+      const { newUnit } = result.boardMutations[0];
+      if (newUnit === null) transitionFlags.set(clickedKey, 'destroyed');
+      else if (newUnit.state === 'suppressed') transitionFlags.set(clickedKey, 'suppressed');
+    }
+
+    commitState(newState, [...result.logEntries, ...overrunLog, ...bonusLog, ...deathrattleLog, ...coGenLog, ...hqStrikeLog], transitionFlags);
     checkWin();
     return;
   }
@@ -1475,6 +1600,19 @@ document.getElementById('board').addEventListener('click', e => {
 
     const targets = getAttackableTargets(state, clickedKey);
     if (targets.length === 0) {
+      if (canStrikeHQDirectly(state, clickedKey)) {
+        const hits = maxAttacks - (attackedThisTurn.get(clickedKey) ?? 0);
+        const result = resolveEmptyBoardStrike(state, clickedKey, hits);
+        const newState = {
+          ...state,
+          p1: { ...state.p1, hq: state.p1.hq - result.hqDamageToP1 },
+          p2: { ...state.p2, hq: state.p2.hq - result.hqDamageToP2 },
+        };
+        attackedThisTurn.set(clickedKey, maxAttacks);
+        commitState(newState, result.logEntries);
+        checkWin();
+        return;
+      }
       appendLog([`${CARD_BY_ID[unit.cardId]?.name ?? '?'} at ${clickedKey}: No valid targets`]);
       return;
     }
@@ -1633,14 +1771,25 @@ function playInstantCommand(cardId) {
       log.push(`${card.name}: Draw 3 cards`);
       break;
     }
+    case 139: { // Grim Requisition — draw a random Deathrattle Unit from deck
+      const deck = s[active].deck;
+      const candidates = deck.map((id, i) => ({ id, i })).filter(({ id }) => {
+        const c = CARD_BY_ID[id];
+        return c?.type === 'unit' && (Array.isArray(c.keyword) ? c.keyword.includes('Deathrattle') : c.keyword === 'Deathrattle');
+      });
+      if (candidates.length === 0) {
+        log.push(`${card.name}: no Deathrattle Unit in deck`);
+        break;
+      }
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      const newDeck = [...deck.slice(0, pick.i), ...deck.slice(pick.i + 1)];
+      s = { ...s, [active]: { ...s[active], deck: newDeck, hand: [...s[active].hand, pick.id] } };
+      log.push(`${card.name}: drew ${CARD_BY_ID[pick.id].name} from deck`);
+      break;
+    }
     case 121: { // Priority Orders — next Hero Power this turn costs 2F less, min 0
       s = { ...s, [active]: { ...s[active], pendingHeroDiscount: s[active].pendingHeroDiscount + 2 } };
       log.push(`${card.name}: next Hero Power this turn costs 2F less`);
-      break;
-    }
-    case 126: { // Coordinated Orders — one extra Hero Power activation this turn, different Hero
-      s = { ...s, [active]: { ...s[active], extraHeroActivation: true } };
-      log.push(`${card.name}: may activate one more Hero Power this turn (different Hero)`);
       break;
     }
     case 122: { // Command Shuffle — move/swap a Hero without spending the normal reposition.
@@ -1789,6 +1938,10 @@ function getCommandTargets(commandId) {
     case 124: // Change Formation — any unsuppressed friendly unit
       return new Set(friendlies.filter(([, u]) => u.state === 'normal').map(([k]) => k));
 
+    case 140: // Sacrifice Play — any friendly unit
+    case 141: // Scorched Earth Rally — any friendly unit
+      return new Set(friendlies.map(([k]) => k));
+
     default: return null; // unknown / not a targeted command
   }
 }
@@ -1884,6 +2037,11 @@ function applyClassCountHits(s, active, targetKey, unit, cls, cardName) {
   s = { ...s, board: { ...s.board, [targetKey]: tgt },
         [unit.owner]: { ...s[unit.owner], hq: s[unit.owner].hq - dmg } };
   log.push(`${cardName}: ${count} hit(s) on ${unitName} — ${dmg} HQ damage`);
+  if (tgt === null) {
+    const dr = checkDeathrattle(s, targetKey, unit);
+    s = dr.state;
+    log.push(...dr.log);
+  }
   return { state: s, log, becameSuppressed };
 }
 
@@ -1991,11 +2149,12 @@ function applyCommandEffect(commandId, targetKey) {
       log.push(`${card.name}: ${unitName} gains Guard + Armor (until your next turn)`);
       break;
     }
-    case 124: { // Change Formation — rotate 90° clockwise, persists until rotated again
-      const newRotation = ((unit.rotation || 0) + 90) % 360;
-      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, rotation: newRotation } } };
-      log.push(`${card.name}: ${unitName} rotated to ${newRotation}°`);
-      break;
+    case 124: { // Change Formation — rotate 90°, direction chosen via modal (persists until rotated again)
+      pendingCommandId = null;
+      preCommandState = null;
+      uiState = 'idle';
+      showRotateDirectionModal({ kind: 'command', targetKey, cardName: card.name, s, log });
+      return;
     }
     case 79: { // Suppressing Fire — 1 hit per friendly Infantry
       const r = applyClassCountHits(s, active, targetKey, unit, 'Infantry', card.name);
@@ -2008,13 +2167,51 @@ function applyCommandEffect(commandId, targetKey) {
       }
       break;
     }
+    case 140: { // Sacrifice Play — destroy own unit; 2 HQ damage to opponent instead of self
+      s = { ...s, board: { ...s.board, [targetKey]: null } };
+      const dr = checkDeathrattle(s, targetKey, unit);
+      s = dr.state;
+      s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
+      log.push(`${card.name}: ${unitName} destroyed — 2 HQ damage to ${opp.toUpperCase()}`);
+      log.push(...dr.log);
+      break;
+    }
+    case 141: { // Scorched Earth Rally — destroy own unit (2 HQ self-damage, as if lost in
+      // combat); every OTHER friendly unit gets +1 all sides until your next turn
+      s = { ...s, board: { ...s.board, [targetKey]: null } };
+      const dr = checkDeathrattle(s, targetKey, unit);
+      s = dr.state;
+      s = { ...s, [active]: { ...s[active], hq: s[active].hq - 2 } };
+      const newBoard = { ...s.board };
+      let count = 0;
+      for (const [k, u] of Object.entries(newBoard)) {
+        if (!u || u.owner !== active || u.state === 'destroyed' || k === targetKey) continue;
+        newBoard[k] = { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 1 };
+        count++;
+      }
+      s = { ...s, board: newBoard };
+      log.push(`${card.name}: ${unitName} destroyed (2 HQ damage) — ${count} other friendly unit(s) +1 all sides (until your next turn)`);
+      log.push(...dr.log);
+      break;
+    }
     default: break;
+  }
+
+  // Cases 16/20/79 (Artillery Barrage/Air Strike/Suppressing Fire) and 140/141 (Sacrifice
+  // Play/Scorched Earth Rally) can transition targetKey's unit — the other cases leave it
+  // alone, so a before/after diff against `unit` (captured at function entry) covers all 5
+  // for free without touching each case.
+  const cmdTransitionFlags = new Map();
+  const afterUnit = s.board[targetKey];
+  if (unit && !afterUnit) cmdTransitionFlags.set(targetKey, 'destroyed');
+  else if (unit && afterUnit && unit.state !== 'suppressed' && afterUnit.state === 'suppressed') {
+    cmdTransitionFlags.set(targetKey, 'suppressed');
   }
 
   pendingCommandId = null;
   preCommandState = null;
   uiState = 'idle';
-  commitState(s, log);
+  commitState(s, log, cmdTransitionFlags);
   checkWin();
 }
 
@@ -2031,7 +2228,9 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
 
   let newState = endTurn(s);                             // swap initiative, increment turn
   const newActive = newState.initiative;
-  if (newState.turn > 2) {                               // skip P2's first turn — they start with 5 already
+  if (newState.turn > 1) {                               // skip only turn 1 (P1) — they already got their
+                                                          // 5th card pre-game in startGame; P2 gets no such
+                                                          // bonus draw, so their first turn (turn 2) must draw here.
     newState = { ...newState, [newActive]: drawCards(newState[newActive], 1) };
   }
   newState = startOfTurn(newState);                      // gain fuel for new active player
@@ -2048,14 +2247,18 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
     }
   }
 
-  // Quartermaster ability: at start of turn, if you control both objectives on the map → draw 1
+  // Quartermaster ability: at start of turn, if you control every objective on the map → draw 1.
+  // Wording was "both objectives" until 2026-08-19 — accurate back when every map had exactly
+  // 2 slots; now objectiveSlots varies 1-4 per map (see maps.js), so this checks ALL objectives
+  // currently placed, whatever the count, same as it always has (objs.every(...) was never
+  // hardcoded to 2 — only the card text and this log line's wording were).
   for (const { unit: u } of unitsOnBoard(newState, newActive)) {
     if (CARD_BY_ID[u.cardId]?.id !== 69) continue;
     const objs = Object.values(newState.objectives);
-    const controlsBoth = objs.length > 0 && objs.every(o => o.controller === newActive);
-    if (controlsBoth) {
+    const controlsAll = objs.length > 0 && objs.every(o => o.controller === newActive);
+    if (controlsAll) {
       newState = { ...newState, [newActive]: drawCards(newState[newActive], 1) };
-      supplyLog.push(`Quartermaster: controls both objectives → draw 1`);
+      supplyLog.push(`Quartermaster: controls every objective on the map → draw 1`);
     }
   }
 
@@ -2516,6 +2719,49 @@ function confirmFieldReserves(takenId) {
 
 document.getElementById('field-reserves-skip').addEventListener('click', () => confirmFieldReserves(null));
 
+// ── Rotate direction modal (Change Formation 124 / Field Engineer 91) ──────────
+// Both effects rotate a unit 90° but let the player choose the direction (2026-08-17,
+// previously a fixed clockwise-only turn). `s`/`log` are the pre-rotation state/log built
+// up by the caller (Fuel already deducted); `kind` distinguishes a Command cast (nothing
+// further to record) from a Hero Power activation (needs heroesActivatedThisTurn updated).
+let pendingRotation = null;
+
+function showRotateDirectionModal(ctx) {
+  pendingRotation = ctx;
+  document.getElementById('rotate-direction-modal').style.display = 'flex';
+}
+
+function confirmRotateDirection(direction) { // direction: 1 = clockwise, -1 = counter-clockwise
+  document.getElementById('rotate-direction-modal').style.display = 'none';
+  if (!pendingRotation) return;
+  const { kind, targetKey, cardName, s, log, role, heroId } = pendingRotation;
+  pendingRotation = null;
+
+  const unit = s.board[targetKey];
+  const newRotation = (((unit.rotation || 0) + direction * 90) % 360 + 360) % 360;
+  let next = { ...s, board: { ...s.board, [targetKey]: { ...unit, rotation: newRotation } } };
+  const unitName = CARD_BY_ID[unit.cardId]?.name ?? 'unit';
+  const dirLabel = direction === 1 ? 'clockwise' : 'counter-clockwise';
+  const newLog = [...log, `${cardName}: ${unitName} rotated to ${newRotation}° (${dirLabel})`];
+
+  if (kind === 'hero') {
+    const activatedBefore = next[role].heroesActivatedThisTurn ?? [];
+    next = {
+      ...next,
+      [role]: {
+        ...next[role],
+        heroesActivatedThisTurn: activatedBefore.includes(heroId) ? activatedBefore : [...activatedBefore, heroId],
+      },
+    };
+  }
+
+  commitState(next, newLog);
+  checkWin();
+}
+
+document.getElementById('rotate-cw-btn').addEventListener('click', () => confirmRotateDirection(1));
+document.getElementById('rotate-ccw-btn').addEventListener('click', () => confirmRotateDirection(-1));
+
 // ── Theme toggle ──────────────────────────────────────────────────────────────
 // The attribute itself is already set by the inline blocking script at the top of <body>
 // (before this deferred module script runs) — this just wires up the button.
@@ -2552,6 +2798,9 @@ function setDebugPlayer(player) {
   debugTargetPlayer = player;
   document.getElementById('debug-player-p1').classList.toggle('active', player === 'p1');
   document.getElementById('debug-player-p2').classList.toggle('active', player === 'p2');
+  // Stale results from before the switch would target the wrong player's hand otherwise.
+  document.getElementById('debug-card-remove-search').value = '';
+  document.getElementById('debug-card-remove-results').innerHTML = '';
 }
 
 document.getElementById('debug-card-search').addEventListener('input', e => {
@@ -2569,6 +2818,35 @@ document.getElementById('debug-card-search').addEventListener('input', e => {
       const { state: newState, log } = debugAddCard(state, debugTargetPlayer, card.id);
       commitState(newState, log);
       document.getElementById('debug-card-search').value = '';
+      results.innerHTML = '';
+    });
+    results.appendChild(el);
+  }
+});
+
+// Sourced from the target player's actual current hand (not the full CARDS list) so nothing
+// clickable here can ever be a no-op — the point of the tool is picking something removable.
+document.getElementById('debug-card-remove-search').addEventListener('input', e => {
+  if (!state) return;
+  const query = e.target.value.trim().toLowerCase();
+  const results = document.getElementById('debug-card-remove-results');
+  results.innerHTML = '';
+  if (!query) return;
+  const hand = state[debugTargetPlayer].hand;
+  const counts = {};
+  for (const id of hand) counts[id] = (counts[id] ?? 0) + 1;
+  const matches = [...new Set(hand)]
+    .map(id => CARD_BY_ID[id])
+    .filter(c => c && c.name.toLowerCase().includes(query))
+    .slice(0, 8);
+  for (const card of matches) {
+    const el = document.createElement('div');
+    el.className = 'debug-card-result';
+    el.textContent = `${card.name} (${card.id}) ×${counts[card.id]}`;
+    el.addEventListener('click', () => {
+      const { state: newState, log } = debugRemoveCard(state, debugTargetPlayer, card.id);
+      commitState(newState, log);
+      document.getElementById('debug-card-remove-search').value = '';
       results.innerHTML = '';
     });
     results.appendChild(el);
@@ -2634,6 +2912,30 @@ document.getElementById('debug-obj-apply').addEventListener('click', () => {
   commitState(newState, log);
 });
 
+// Objective cards are static (unlike the tile dropdown above, which tracks live objective
+// placement) — populate once rather than refreshing every redraw(). Offers all 8 objective
+// cards, not just the 5-ID live random pool (WORKING_OBJECTIVE_IDS) — this tool exists
+// specifically so Bridge/Radar Station/Fortification can be manually tested despite being
+// excluded from normal match setup.
+(function populateDebugObjectiveCardOptions() {
+  const select = document.getElementById('debug-obj-card-select');
+  for (const c of CARDS.filter(c => c.type === 'objective')) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.id} — ${c.name}`;
+    select.appendChild(opt);
+  }
+})();
+
+document.getElementById('debug-obj-card-apply').addEventListener('click', () => {
+  if (!state) return;
+  const tileKey = document.getElementById('debug-obj-select').value;
+  if (!tileKey) return;
+  const cardId = Number(document.getElementById('debug-obj-card-select').value);
+  const { state: newState, log } = debugSetObjectiveCard(state, tileKey, cardId);
+  commitState(newState, log);
+});
+
 document.getElementById('debug-unit-select-btn').addEventListener('click', () => {
   debugSelectingUnit = true;
   debugSelectedUnitKey = null;
@@ -2645,8 +2947,19 @@ function applyDebugUnitState(newUnitState) {
     appendLog(['[DEBUG] No unit selected — click "Select Unit" first.']);
     return;
   }
+  const dyingUnit = state.board[debugSelectedUnitKey];
   const { state: newState, log } = debugSetUnitState(state, debugSelectedUnitKey, newUnitState);
-  commitState(newState, log);
+  let finalState = newState;
+  let finalLog = log;
+  if (newUnitState === 'destroyed' && dyingUnit) {
+    const dr = checkDeathrattle(finalState, debugSelectedUnitKey, dyingUnit);
+    finalState = dr.state;
+    finalLog = [...log, ...dr.log];
+  }
+  const debugTransitionFlags = newUnitState !== 'normal'
+    ? new Map([[debugSelectedUnitKey, newUnitState]]) // 'suppressed' or 'destroyed'; Reset shouldn't animate
+    : new Map();
+  commitState(finalState, finalLog, debugTransitionFlags);
   if (newUnitState === 'destroyed') {
     debugSelectedUnitKey = null;
     document.getElementById('debug-unit-hint').textContent = 'Click "Select Unit", then click a unit on the board.';
