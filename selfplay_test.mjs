@@ -5,17 +5,19 @@
 // Run with: node selfplay_test.mjs [games]
 import { chromium } from "playwright";
 import { CARD_BY_ID } from "./js/cards.js";
-import { bestPlacement, bestExistingAttack, findLethal, findCombinedLethal, bestAttackForUnit, bestDamageCommandTarget, scoreCommand, scoreHeroPower, bestHeroPowerTarget, bestHeroDeployment, maxAttacksFor } from "./js/bot_ai.js";
+import { bestPlacement, bestExistingAttack, findLethal, findCombinedLethal, bestAttackForUnit, scoreCommand, scoreHeroPower, bestHeroPowerTarget, bestHeroDeployment, maxAttacksFor } from "./js/bot_ai.js";
 import { discountFor } from "./js/state.js";
 
 const NUM_GAMES = Number(process.argv[2] || 3);
 const MAX_HALF_TURNS = 60; // safety valve — 30 rounds each (real games finish in ~7-11)
 const STALL_STREAK_LIMIT = 8; // consecutive half-turns with zero HQ/board change = bail early (~4 rounds of true stagnation, not a normal quiet lull)
 const BASE_URL = "http://localhost:3000";
-const DAMAGE_COMMAND_IDS = new Set([16, 20, 79]);
 
-const DECKS = ["aggro", "control", "counter", "power"];
-const MAPS = ["normandy", "stalingrad", "el_alamein", "ardennes", "kursk", "midway"];
+// Updated 2026-08-31 (Run 1) for the 8 SIGNAL Set 1 Recommended Decks (see decks.js
+// STARTER_DECKS) replacing the old 4 starter decks. Updated again same day (Run 2) for the
+// doc-04-locked 4-map truth — Normandy and Midway are cut (archived in maps.js, not deleted).
+const DECKS = ["infantry-formation", "tank-blitz", "artillery-fire-control", "air-superiority", "last-stand-sacrifice", "command-engine", "combined-arms", "objective-tempo"];
+const MAPS = ["stalingrad", "el_alamein", "ardennes", "kursk"];
 
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
@@ -60,11 +62,22 @@ async function handleRadioOperator(page) {
   await page.waitForTimeout(30);
 }
 
-// Change Formation (124) / Field Engineer (91): direction doesn't affect scoring, always CW.
+// Change Formation (C16) / Field Coordinator's Hero Power (H11): direction doesn't affect
+// scoring, always CW.
 async function handleRotateDirection(page) {
   const modal = page.locator("#rotate-direction-modal");
   if (!(await modal.isVisible().catch(() => false))) return;
   await page.locator("#rotate-cw-btn").click().catch(() => {});
+  await page.waitForTimeout(30);
+}
+
+// Chief Aircraft Engineer (H25) Craft: 3 freshly-rolled candidates, no heuristic scores them
+// (they don't exist until rolled) — always takes the first, mirroring bot_player.js's in-page
+// handleCraftPicker (see CLAUDE.md: the two bots are duplicated and must be updated in parallel).
+async function handleCraftPicker(page) {
+  const modal = page.locator("#craft-picker-modal");
+  if (!(await modal.isVisible().catch(() => false))) return;
+  await page.locator("#craft-picker-cards .fo-pos-btn").first().click().catch(() => {});
   await page.waitForTimeout(30);
 }
 
@@ -102,9 +115,23 @@ async function handleArtyTargeting(page) {
   await page.waitForTimeout(30);
 }
 
+// Objective player-choice targeting (2026-09-01) — mirrors bot_player.js's handleObjectivePicking
+// (see that file for the full rationale: no scoring heuristic, gated on uiState rather than
+// ".cmd-target" presence alone since Hero-power/Command-maneuver targeting share that class).
+// Handles both steps of Airfield L2's Maneuver automatically — whichever step is current,
+// game.js's render highlight already narrows ".cmd-target" to just that step's legal set.
+async function handleObjectivePicking(page) {
+  const debug = await readDebug(page);
+  if (debug?.uiState !== "objective-picking") return;
+  const targets = page.locator(".tile.cmd-target");
+  const count = await targets.count();
+  if (count > 0) await targets.first().click();
+  await page.waitForTimeout(30);
+}
+
 // Resolve an attack-targeting or command-targeting prompt smartly: re-read live state,
 // score the DOM-offered candidate tiles, click the best one. Loops for Double Attack.
-async function resolveTargetingSmart(page, { attackerKey = null, isDamageCommand = false, heroPower = null } = {}, maxSteps = 3) {
+async function resolveTargetingSmart(page, { attackerKey = null, heroPower = null } = {}, maxSteps = 3) {
   for (let i = 0; i < maxSteps; i++) {
     const targetTiles = page.locator(".tile.targetable, .tile.cmd-target");
     const count = await targetTiles.count();
@@ -115,10 +142,7 @@ async function resolveTargetingSmart(page, { attackerKey = null, isDamageCommand
     const debug = await readDebug(page);
     let chosenKey = keys[0];
     if (debug?.state) {
-      if (isDamageCommand) {
-        const best = bestDamageCommandTarget(debug.state, debug.state.initiative, keys);
-        if (best) chosenKey = best.targetKey;
-      } else if (heroPower) {
+      if (heroPower) {
         const best = bestHeroPowerTarget(debug.state, debug.state.initiative, heroPower.heroId, heroPower.col);
         if (best && keys.includes(best.key)) chosenKey = best.key;
       } else if (attackerKey) {
@@ -156,6 +180,16 @@ async function playTurnSmart(page) {
     await handleForwardObserver(page);
     await handleRadioOperator(page);
     await handleRotateDirection(page);
+    await handleCraftPicker(page);
+    // Must run before flushPendingUiState below — there's no Cancel button for
+    // 'objective-picking'. Also re-check Hero deploy here (not just at the top of the outer
+    // per-turn loop): resolving the last pending Objective pick can trigger a deferred Hero
+    // Phase mid-chain (doc 04: Objective step resolves before free Hero deployment), and unlike
+    // "vs AI" mode (which auto-deploys with no modal), this harness runs isAiMode=false, so
+    // runHeroPhase opens the real modal here — an unhandled modal silently swallows clicks and
+    // the run reports STALLED instead of erroring loudly.
+    await handleObjectivePicking(page);
+    await handleHeroDeploy(page);
     if (await page.locator("#end-screen").isVisible().catch(() => false)) return;
 
     let debug = await readDebug(page);
@@ -260,8 +294,8 @@ async function playTurnSmart(page) {
       const handBefore = ps.hand.length;
       await clickHandCard(page, choice.cardId);
       await page.waitForTimeout(30);
-      await resolveTargetingSmart(page, { isDamageCommand: DAMAGE_COMMAND_IDS.has(choice.cardId) });
-      await handleRotateDirection(page); // Change Formation (124)
+      await resolveTargetingSmart(page);
+      await handleRotateDirection(page); // Change Formation (C16)
       const afterDebug = await readDebug(page);
       const handAfter = afterDebug?.state?.[active]?.hand?.length ?? handBefore;
       if (handAfter === handBefore) deadThisTurn.add(choice.cardId); // no-op: card never left hand
@@ -273,7 +307,8 @@ async function playTurnSmart(page) {
       await clickHeroZone(page, active, choice.col);
       await page.waitForTimeout(30);
       await resolveTargetingSmart(page, { heroPower: { heroId: choice.heroId, col: choice.col } });
-      await handleRotateDirection(page); // Field Engineer (91)
+      await handleRotateDirection(page); // Field Coordinator's Hero Power (H11)
+      await handleCraftPicker(page); // Chief Aircraft Engineer's Hero Power (H25)
       const afterDebug = await readDebug(page);
       const nowActivated = afterDebug?.state?.[active]?.heroesActivatedThisTurn ?? [];
       if (!nowActivated.includes(choice.heroId)) deadThisTurn.add(`hero:${choice.heroId}`); // no-op: no legal target
@@ -287,11 +322,13 @@ async function playOneGame(page) {
   await page.locator("#btn-local").click();
 
   const d1 = pick(DECKS), d2 = pick(DECKS), map = pick(MAPS);
+  // Run 2 (2026-08-31): map picker now shows first for local play (doc 04 §1's locked
+  // setup order — map before deck/Hero roster), reversing the old deck->deck->map sequence.
+  await page.locator(`#map-grid .deck-option[data-map="${map}"]`).click();
+  await page.locator("#deck-picker").waitFor({ state: "visible", timeout: 5000 });
   await page.locator(`#deck-grid .deck-option[data-deck="${d1}"]`).click();
   await page.waitForTimeout(50);
   await page.locator(`#deck-grid .deck-option[data-deck="${d2}"]`).click();
-  await page.locator("#map-picker").waitFor({ state: "visible", timeout: 5000 });
-  await page.locator(`#map-grid .deck-option[data-map="${map}"]`).click();
   await page.waitForTimeout(50);
 
   // Mulligan and starting-Hero pick interleave (P1 mulligan -> P2 mulligan -> P1 hero -> P2 hero),
@@ -322,6 +359,7 @@ async function playOneGame(page) {
     await handleForwardObserver(page);
     await handleRadioOperator(page);
     await handleRotateDirection(page);
+    await handleCraftPicker(page);
 
     if (await page.locator("#end-screen").isVisible().catch(() => false)) break;
     const endTurnBtn = page.locator("#btn-end-turn");
@@ -389,7 +427,7 @@ async function playOneGame(page) {
   for (let g = 0; g < NUM_GAMES; g++) {
     const page = await browser.newPage();
     page.on("console", msg => { if (msg.type() === "error") consoleErrors.push(`game${g + 1}: ${msg.text()}`); });
-    page.on("pageerror", err => pageErrors.push(`game${g + 1}: ${err.message}`));
+    page.on("pageerror", err => pageErrors.push(`game${g + 1}: ${err.message}\n${err.stack}`));
     try {
       const result = await playOneGame(page);
       results.push(result);

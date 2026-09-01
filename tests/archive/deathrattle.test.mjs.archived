@@ -236,8 +236,8 @@ test('checkPendingUnitBuff applies a queued buff to a matching Unit and consumes
   const { state: after, log } = checkPendingUnitBuff(s, 'p1', '0,0', naval);
   assert.equal(log.length, 1);
   assert.equal(after.board['0,0'].grantedSideBonus, 1);
-  // Permanent (sideBonusTurns:99) — corrected 2026-08-20, per Filip: was wrongly given a
-  // 1-turn limit like Veteran Battery (134), which IS meant to
+  // Permanent (sideBonusTurns:99, same convention as Field Marshal 144) — corrected 2026-08-20,
+  // per Filip: was wrongly given a 1-turn limit like Veteran Battery (134), which IS meant to
   // be temporary; Convoy Escort's bonus isn't.
   assert.equal(after.board['0,0'].sideBonusTurns, 99);
   assert.deepEqual(after.p1.pendingUnitBuffs, [], 'the buff is consumed, not left queued');

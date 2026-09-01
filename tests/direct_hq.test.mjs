@@ -1,0 +1,165 @@
+// Unit tests for Direct HQ (evaluateDirectHQ, combat.js) — Set 1 truth doc 01 §19.
+// This mechanic had ZERO test coverage before this file, despite being flagged "MUST TEST
+// EARLY" / P0 in Denis's 08_SIGNAL_Local_Playtest_Card_QA_Checklist. Section numbers below
+// reference that checklist's Section 2.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { evaluateDirectHQ } from '../js/combat.js';
+
+function boardWith(entries) {
+  const board = {};
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) board[`${r},${c}`] = null;
+  return { ...board, ...entries };
+}
+const unit = (owner, cardId = 'I1', extra = {}) => ({ cardId, owner, state: 'normal', armorHits: 0, rotation: 0, persistentSpent: 0, tempExtraAttacks: 0, tempExtraAttacksSpent: 0, tempKeywords: [], grantedKeywords: [], ...extra });
+const baseState = (board, extra = {}) => ({ turn: 2, mapId: 'kursk', board, objectives: {}, p1: { hq: 30 }, p2: { hq: 30 }, ...extra });
+
+test('normal Unit, 1 remaining attack, no legal target -> 1 HQ damage', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1') }));
+  const { hqDamageToP2, log } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 1);
+  assert.equal(log.length, 1);
+});
+
+test('Double Attack Unit, 2 remaining attacks, no target -> 2 sequential HQ damage', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'T36') })); // T36 Flak Halftrack, Double Attack
+  const { hqDamageToP2, log } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 2);
+  assert.equal(log.length, 2);
+});
+
+test('one attack already spent, one remaining -> only the remaining attack converts', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'T36', { persistentSpent: 1 }) })); // Double Attack, 1 of 2 spent
+  const { hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 1);
+});
+
+test('legal adjacent enemy target exists, even one the attacker would lose to -> NO Direct HQ', () => {
+  // I1 Rifle Squad (5/4/3/2) attacking into T27 King Tiger (9/9/9/9) — attacker loses every
+  // comparison, but getAttackableTargets only checks legality, not attackBeats, so this still
+  // counts as a legal target and must block conversion.
+  const state = baseState(boardWith({ '0,0': unit('p1', 'I1'), '0,1': unit('p2', 'T27') }));
+  const { hqDamageToP2, log } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 0);
+  assert.equal(log.length, 0);
+});
+
+test('Bombard Unit with an enemy at range 2/3 -> NO Direct HQ (legal ranged target exists)', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'AR43'), '3,0': unit('p2', 'I1') })); // AR43 Field Howitzer, Bombard
+  const { hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 0);
+});
+
+test('Bombard Unit with no legal ranged/adjacent enemy -> remaining attacks convert', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'AR43') }));
+  const { hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 1);
+});
+
+test('a reachable Guard enemy is a legal target and blocks Direct HQ, even while Suppressed', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'I1'), '0,1': unit('p2', 'I6', { state: 'suppressed' }) })); // I6 Shield Bearers, Guard
+  const { hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 0, 'Suppressed Guard still counts as a legal target per locked decisions');
+});
+
+test('Suppressed friendly Unit never Direct HQs, even fully isolated with no targets', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'I1', { state: 'suppressed' }) }));
+  const { hqDamageToP2, log } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 0);
+  assert.equal(log.length, 0);
+});
+
+test('temporary additional attack (persistent pool exhausted) still converts through Direct HQ', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'I1', { persistentSpent: 1, tempExtraAttacks: 1, tempExtraAttacksSpent: 0 }) }));
+  const { hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 1, 'temp attacks must still be read by remainingAttacks() at Direct HQ time');
+});
+
+test('temporary Bombard grant (tempKeywords) is honored by Direct HQ target-legality check', () => {
+  // I1 has no innate Bombard; grant it via tempKeywords the same way Fire Support Officer (H12)
+  // does. An enemy 2 tiles away in the same row is now a legal ranged target -> blocks Direct HQ.
+  const state = baseState(boardWith({ '0,0': unit('p1', 'I1', { tempKeywords: ['Bombard'] }), '0,2': unit('p2', 'I2') }));
+  const { hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 0, 'a temp-granted Bombard target must still block conversion');
+});
+
+test('Player 1 first turn (state.turn === 1) produces 0 Direct HQ regardless of setup', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'T36') }), { turn: 1 });
+  const { hqDamageToP2, log } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 0);
+  assert.equal(log.length, 0);
+});
+
+test('Player 2 first turn (state.turn === 2) uses normal Direct HQ, not blocked', () => {
+  const state = baseState(boardWith({ '0,0': unit('p2', 'I1') }), { turn: 2 });
+  const { hqDamageToP1 } = evaluateDirectHQ(state, 'p2');
+  assert.equal(hqDamageToP1, 1);
+});
+
+// Doc 02 Q005 (locked, fixed 2026-08-31): first player is chosen randomly, not always "p1" —
+// these two mirror the pair above with the roles swapped, confirming the turn-1 lock is truly
+// label-agnostic (keyed on state.turn, never on which of p1/p2 is acting) now that either role
+// can actually be the one moving first in a real game.
+test('p2 moving first (state.turn === 1) is blocked, regardless of label', () => {
+  const state = baseState(boardWith({ '0,0': unit('p2', 'T36') }), { turn: 1 });
+  const { hqDamageToP1, log } = evaluateDirectHQ(state, 'p2');
+  assert.equal(hqDamageToP1, 0);
+  assert.equal(log.length, 0);
+});
+
+test('p1 moving second (state.turn === 2) uses normal Direct HQ, not blocked, regardless of label', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'I1') }), { turn: 2 });
+  const { hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 1);
+});
+
+test('multiple qualifying Units resolve in fixed left-to-right column, top-to-bottom order', () => {
+  const state = baseState(boardWith({ '2,1': unit('p1', 'I1'), '0,0': unit('p1', 'I2'), '1,0': unit('p1', 'I3') }));
+  const { log } = evaluateDirectHQ(state, 'p1');
+  // Column 0 first (I2 at row0, then I3 at row1), then column 1 (I1 at row2).
+  assert.equal(log.length, 3);
+  assert.ok(log[0].startsWith('Militia'));           // I2, col 0 row 0
+  assert.ok(log[1].startsWith('Regular Infantry'));  // I3, col 0 row 1
+  assert.ok(log[2].startsWith('Rifle Squad'));        // I1, col 1 row 2
+});
+
+test('lethal Direct HQ stops accumulating damage exactly at the lethal instant', () => {
+  const state = baseState(boardWith({ '0,0': unit('p1', 'T36') }), { p2: { hq: 1 } }); // Double Attack, 2 remaining, but opp HQ = 1
+  const { hqDamageToP2, log } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 1, 'only the lethal point of damage should land, not both Double Attack hits');
+  assert.equal(log.length, 1);
+});
+
+test('lethal Direct HQ correctly stacks ACROSS units in scan order — a second unit finishes off HQ already reduced by the first, not each independently against the original value', () => {
+  // Column 0 (I2 at row 0) resolves before column 1 (I1 at row 2) — fixedScanOrder is
+  // column-major. Opponent HQ = 2: the first unit's 1 conversion must bring it to 1 before the
+  // second unit is ever evaluated, so the second unit's own lethal check sees HQ=1, not HQ=2.
+  const state = baseState(boardWith({ '2,1': unit('p1', 'I1'), '0,0': unit('p1', 'I2') }), { p2: { hq: 2 } });
+  const { hqDamageToP2, log } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 2, 'both units together finish the HQ — not 1 (only the first) and not somehow more than 2');
+  assert.equal(log.length, 2, 'both units get exactly 1 conversion each, none stop short or overshoot');
+});
+
+test('a Precision attacker with a wider (Guard + non-Guard) legal-target pool still correctly blocks Direct HQ', () => {
+  // A61 Strategic Bomber: Precision + Bombard. Note what this test can and can't show: Direct
+  // HQ only ever cares whether getAttackableTargets returns an EMPTY set — Guard-priority
+  // filtering can only narrow a non-empty raw pool to a non-empty Guard subset, never to empty,
+  // so Precision's "return the full pool instead of just the Guard subset" widening can never
+  // flip Direct HQ from blocked to converting (or vice versa) on its own. What this test DOES
+  // confirm is that evaluateDirectHQ correctly consumes a WIDER legal-target array (both I6 and
+  // I2 here, not just the Guard one) without some implementation quirk assuming a Guard-only
+  // shape — i.e. it still reads "non-empty" correctly regardless of which candidates are in it.
+  const state = baseState(boardWith({ '0,0': unit('p1', 'A61'), '3,0': unit('p2', 'I6'), '0,3': unit('p2', 'I2') })); // I6 Guard, I2 no keyword
+  const { hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 0, 'both enemies are legal targets for a Precision attacker — still blocks Direct HQ');
+});
+
+test('evaluateDirectHQ never calls into attack-resolution machinery (structural: no Rally trigger possible)', () => {
+  // Rally only fires from checkRally/resolveSingleAttack in the real attack path (game.js) —
+  // evaluateDirectHQ's own board mutations are limited to spendAttack bookkeeping, so a Rally
+  // Infantry with no target converts via Direct HQ without any Rally side effect to assert on.
+  const state = baseState(boardWith({ '0,0': unit('p1', 'I12') })); // I12 Assault Trooper, Rally: draw 1 card
+  const { state: after, hqDamageToP2 } = evaluateDirectHQ(state, 'p1');
+  assert.equal(hqDamageToP2, 1);
+  assert.equal(after.p1.hand, undefined, 'no player-state hand mutation of any kind occurred');
+});

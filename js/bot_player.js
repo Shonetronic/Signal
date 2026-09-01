@@ -3,11 +3,10 @@
 // instead of driving a separate Playwright browser, it clicks the real DOM elements on this
 // page directly — the same elements a human would click. This goes through game.js's existing,
 // unmodified click handlers, so no game logic needed to change to add this feature.
-import { CARD_BY_ID } from "./cards.js";
-import { discountFor } from "./state.js";
-import { bestPlacement, bestExistingAttack, findLethal, findCombinedLethal, bestAttackForUnit, bestDamageCommandTarget, scoreCommand, scoreHeroPower, bestHeroPowerTarget } from "./bot_ai.js";
+import { CARD_BY_ID } from "./cards.js?v=1788289776";
+import { discountFor } from "./state.js?v=1788289776";
+import { bestPlacement, bestExistingAttack, findLethal, findCombinedLethal, bestAttackForUnit, scoreCommand, scoreHeroPower, bestHeroPowerTarget } from "./bot_ai.js?v=1788289776";
 
-const DAMAGE_COMMAND_IDS = new Set([16, 20, 79]);
 const CLICK_DELAY_MS = 350; // pacing so a human watching can follow what the bot is doing
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -35,8 +34,11 @@ async function handleForwardObserver() {
   await sleep(CLICK_DELAY_MS);
 }
 
-// Radio Operator (111) on-play: look at top 2 of the deck, put one on top. Binary choice,
-// resolves on a single click — no separate Confirm button (see game.js's showRadioOperatorModal).
+// Radio Operator on-play: look at top 2 of the deck, put one on top. Binary choice, resolves on
+// a single click — no separate Confirm button (see game.js's showRadioOperatorModal). Note: the
+// old numeric-id Radio Operator card this was built for isn't in the new 125-card pool — kept
+// since the underlying modal/mechanic (js/game.js's showRadioOperatorModal) is still live code,
+// just currently unreachable from any Run-1 card; harmless to leave wired.
 async function handleRadioOperator() {
   const modal = document.getElementById("radio-op-modal");
   if (!modal || modal.style.display === "none") return;
@@ -50,12 +52,42 @@ async function handleArtyTargeting() {
   await sleep(CLICK_DELAY_MS);
 }
 
-// Change Formation (124) / Field Engineer (91): rotation direction doesn't affect the bot's
-// evaluation (scoreCommand/scoreHeroPower don't model it), so it always picks clockwise.
+// Objective player-choice targeting (2026-09-01): Airfield L2/Supply Depot L1/City L1/Artillery
+// Position L1 pause for a board click instead of auto-picking (see applyObjectiveEffects,
+// game.js). No scoring heuristic — same "don't overthink it" simplification as
+// handleRotateDirection/handleCraftPicker below: first eligible tile, always. Gated explicitly
+// on uiState (not just ".cmd-target" presence) because that class is also used by Hero-power and
+// Command-maneuver targeting — clicking blind on element presence alone could hijack an unrelated
+// in-progress flow. Handles both steps of Airfield L2's Maneuver automatically: whichever step is
+// current, computeObjectivePickTargets (game.js's render highlight) already narrows ".cmd-target"
+// to just that step's legal set, so this needs no extra state of its own. Artillery Position L1's
+// direction choice is covered separately by handleRotateDirection, which runs every iteration
+// regardless of kind.
+async function handleObjectivePicking() {
+  const debug = readDebug();
+  if (debug?.uiState !== "objective-picking") return;
+  const targets = document.querySelectorAll(".tile.cmd-target");
+  if (targets.length > 0) targets[0].click();
+  await sleep(CLICK_DELAY_MS);
+}
+
+// Change Formation (C16) / Field Coordinator's Hero Power (H11): rotation direction doesn't
+// affect the bot's evaluation (scoreCommand/scoreHeroPower don't model it), so it always picks
+// clockwise.
 async function handleRotateDirection() {
   const modal = document.getElementById("rotate-direction-modal");
   if (!modal || modal.style.display === "none") return;
   document.getElementById("rotate-cw-btn")?.click();
+  await sleep(CLICK_DELAY_MS);
+}
+
+// Chief Aircraft Engineer (H25) Craft: 3 freshly-rolled candidates, no existing heuristic
+// scores them (they don't exist until rolled), so the bot always takes the first one — same
+// "don't overthink it" simplification as handleRotateDirection's fixed clockwise choice.
+async function handleCraftPicker() {
+  const modal = document.getElementById("craft-picker-modal");
+  if (!modal || modal.style.display === "none") return;
+  document.querySelector("#craft-picker-cards .fo-pos-btn")?.click();
   await sleep(CLICK_DELAY_MS);
 }
 
@@ -70,7 +102,7 @@ async function flushPendingUiState(debug) {
   return readDebug();
 }
 
-async function resolveTargetingSmart({ attackerKey = null, isDamageCommand = false, heroPower = null } = {}, maxSteps = 3) {
+async function resolveTargetingSmart({ attackerKey = null, heroPower = null } = {}, maxSteps = 3) {
   for (let i = 0; i < maxSteps; i++) {
     const targetTiles = [...document.querySelectorAll(".tile.targetable, .tile.cmd-target")];
     if (targetTiles.length === 0) return;
@@ -79,10 +111,7 @@ async function resolveTargetingSmart({ attackerKey = null, isDamageCommand = fal
     const debug = readDebug();
     let chosenKey = keys[0];
     if (debug?.state) {
-      if (isDamageCommand) {
-        const best = bestDamageCommandTarget(debug.state, debug.state.initiative, keys);
-        if (best) chosenKey = best.targetKey;
-      } else if (heroPower) {
+      if (heroPower) {
         const best = bestHeroPowerTarget(debug.state, debug.state.initiative, heroPower.heroId, heroPower.col);
         if (best && keys.includes(best.key)) chosenKey = best.key;
       } else if (attackerKey) {
@@ -105,6 +134,12 @@ async function playBotTurnSteps() {
     await handleForwardObserver();
     await handleRadioOperator();
     await handleRotateDirection();
+    await handleCraftPicker();
+    // Must run before flushPendingUiState below: there's no Cancel button for
+    // 'objective-picking' (it isn't a voluntary action to back out of), so if this uiState were
+    // ever left for flushPendingUiState's generic "click Cancel on anything stale" fallback to
+    // find, the bot's turn would hang forever instead of progressing.
+    await handleObjectivePicking();
     if (isGameOver()) return;
 
     let debug = await flushPendingUiState(readDebug());
@@ -210,8 +245,8 @@ async function playBotTurnSteps() {
       const handBefore = ps.hand.length;
       clickHandCard(choice.cardId);
       await sleep(CLICK_DELAY_MS);
-      await resolveTargetingSmart({ isDamageCommand: DAMAGE_COMMAND_IDS.has(choice.cardId) });
-      await handleRotateDirection(); // Change Formation (124) — direction modal, see game.js
+      await resolveTargetingSmart();
+      await handleRotateDirection(); // Change Formation (C16) — direction modal, see game.js
       const afterDebug = readDebug();
       const handAfter = afterDebug?.state?.[active]?.hand?.length ?? handBefore;
       if (handAfter === handBefore) deadThisTurn.add(choice.cardId); // no-op: card never left hand
@@ -224,6 +259,7 @@ async function playBotTurnSteps() {
       await sleep(CLICK_DELAY_MS);
       await resolveTargetingSmart({ heroPower: { heroId: choice.heroId, col: choice.col } });
       await handleRotateDirection(); // Field Engineer (91) — direction modal, see game.js
+      await handleCraftPicker(); // Chief Aircraft Engineer (H25) — 3-candidate modal, see game.js
       const afterDebug = readDebug();
       const nowActivated = afterDebug?.state?.[active]?.heroesActivatedThisTurn ?? [];
       if (!nowActivated.includes(choice.heroId)) deadThisTurn.add(`hero:${choice.heroId}`); // no-op: no legal target

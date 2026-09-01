@@ -1,20 +1,34 @@
-import { CARD_BY_ID } from './cards.js?v=1787182794';
-import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir } from './state.js?v=1787182794';
-import { getTerrain } from './maps.js?v=1787182794';
+import { CARD_BY_ID } from './cards.js?v=1788289776';
+import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir } from './state.js?v=1788289776';
+import { getTerrain } from './maps.js?v=1788289776';
+import { nextCraftCost } from './combat.js?v=1788289776';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
 // Player-facing keyword rules text for the hover tooltip on .bc-kw-tag badges — see GDD
 // Section 7. Only mapped keywords get a data-tip attribute; an unmapped one (e.g. a future
 // keyword not yet documented here) silently shows no tooltip rather than an empty bubble.
+// All 16 live Set-1 keywords are covered (see ARCHITECTURE.md's Keyword Resolution Decisions
+// table) — previously only 5 were, leaving Precision/Blast/Barrage/Breakthrough/Rally/Inspire/
+// Muster/Last Stand/Maneuver/Escalate/Craft tagged with no explanation at all. Airborne and
+// Deathrattle are both cut entirely (doc 03) and no longer mapped here.
 const KEYWORD_TEXT = {
+  'Guard': 'Attacker must target this unit before any other legal target, regardless of range.',
+  'Precision': 'Ignores Guard — may target any legal enemy directly.',
   'Armor': 'Absorbs 1 hit before Suppression — 3 hits total to destroy.',
   'Heavy Armor': 'Absorbs 2 hits before Suppression — 4 hits total to destroy.',
-  'Guard': 'Adjacent enemies must attack this unit first.',
-  'Double Attack': 'This unit resolves two attacks per activation.',
   'Bombard': 'Can attack any enemy in its row or column, not just adjacent tiles.',
-  'Airborne': 'Ignores terrain placement restrictions.',
-  'Deathrattle': 'When this Unit is Destroyed, its effect triggers immediately.',
+  'Blast': 'On a successful hit, also hits the enemies directly beside the target.',
+  'Barrage': 'On a successful hit, also hits enemies further along the same line.',
+  'Double Attack': 'This unit resolves two attacks per activation.',
+  'Breakthrough': 'When this unit destroys an enemy, a bonus effect triggers.',
+  'Rally': 'Triggers whenever this unit attacks, whether or not the attack succeeds.',
+  'Inspire': 'Adjacent friendly units get +1 all sides for each adjacent Inspire source.',
+  'Muster': '+1 all sides for every other friendly Infantry you control, anywhere on the board.',
+  'Last Stand': 'Triggers an effect the instant this unit is destroyed.',
+  'Maneuver': 'Moves a friendly unit to any other empty, legal tile.',
+  'Escalate': "This card's effect is upgraded after its first use each match.",
+  'Craft': 'Generates aircraft candidates to choose from — activation cost drops with each use.',
 };
 
 // ── Board rendering ───────────────────────────────────────────────────────────
@@ -28,7 +42,7 @@ const KEYWORD_TEXT = {
 // recomputed per-viewer rotation. Stats shown on a placed card also never flip by owner
 // (see getSideValue in state.js) — a card's printed N/E/S/W always maps to physical
 // N/E/S/W, same as in hand.
-export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null, transitionFlags = null) {
+export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null, transitionFlags = null, terrainBlockedKeys = null) {
   const board = document.getElementById('board');
   board.innerHTML = '';
 
@@ -110,6 +124,12 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
         tile.appendChild(buildBoardCard(unit, 'p1', transitionFlags?.get(key)));
       } else {
         if (validDropKeys?.has(key)) tile.classList.add('valid-drop');
+        // Empty and legal-to-target-terrain-wise but currently blocked for the selected
+        // card specifically because of terrain (Forest vs Tank, etc.) — previously these
+        // tiles looked identical to any other non-highlighted tile; a player had no way to
+        // tell "blocked by terrain" from "just not selected" until clicking and reading the
+        // log. Only meaningful while placing (terrainBlockedKeys is null otherwise).
+        if (terrainBlockedKeys?.has(key)) tile.classList.add('terrain-blocked');
         // A destroyed unit is nulled out of state.board the instant it dies (see applyHit /
         // resolveSingleAttack) — there's no lingering "destroyed" card to animate, so the
         // flash plays on the now-empty tile itself instead.
@@ -128,41 +148,88 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
 function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   const card = CARD_BY_ID[unit.cardId];
   const el = document.createElement('div');
-  const buffed = unit.tempSideBonus > 0 || unit.grantedSideBonus > 0 || unit.debugSideBonus > 0 || (unit.tempKeywords?.length > 0) || (unit.grantedKeywords?.length > 0);
+  // Sum of every side-bonus source (matches the `bonus` total computed below for the actual
+  // displayed numbers — objSideBonus was previously missing from this specific check, so a
+  // unit buffed only by an Objective wouldn't get the halo even though its numbers already
+  // showed gold). A buffed unit gets a persistent gold halo; a debuffed one gets the same
+  // treatment in red — previously only the positive case existed, so a unit weakened on every
+  // side had no card-level tell, only the per-side red digits.
+  const totalSideBonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.objSideBonus || 0) + (unit.debugSideBonus || 0) + (unit.dynamicSideBonus || 0);
+  const hasKeywordGrant = (unit.tempKeywords?.length > 0) || (unit.grantedKeywords?.length > 0) || (unit.permanentKeywords?.length > 0);
+  const buffed = totalSideBonus > 0 || hasKeywordGrant;
+  const debuffed = totalSideBonus < 0;
   const opponent = unit.owner !== viewer;
   const justSuppressed = transitionFlag === 'suppressed' ? ' just-suppressed' : '';
-  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${opponent ? ' opponent-card' : ''}${justSuppressed}`;
+  // Direct HQ source pulse — reuses the generic FxFlash primitive directly (gold/positive,
+  // matching the causality-pulse "source glow" language) rather than adding another
+  // semantic just-* wrapper class that would just re-point to the same animation.
+  const directHqSource = transitionFlag === 'direct-hq' ? ' fx-flash-positive' : '';
+  // Armor absorb — one-shot protection-blue flash (also FxFlash directly, no new wrapper).
+  const armorAbsorbed = transitionFlag === 'armor-absorbed' ? ' fx-flash-protect' : '';
+  // Protection ring — keyed off REMAINING protection (maxArmorHits - armorHits), not the
+  // card's static max, so a Heavy Armor unit's inner ring disappears after its first absorbed
+  // hit and the outer ring after its second, matching "a layer of protection being consumed"
+  // rather than a fixed decoration. Kept alongside the existing armor pips (exact numeric
+  // count) rather than replacing them — the ring is the fast "still protected?" glance, the
+  // pips are the precise "how many hits left" readout.
+  const maxArmor = maxArmorHits(unit);
+  const remaining = maxArmor - unit.armorHits;
+  const armorRing = maxArmor > 0 && remaining >= 1 ? ' armor-ring' : '';
+  const armorRingHeavy = maxArmor > 1 && remaining >= 2 ? ' armor-ring-heavy' : '';
+  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${debuffed ? ' debuffed' : ''}${opponent ? ' opponent-card' : ''}${justSuppressed}${directHqSource}${armorAbsorbed}${armorRing}${armorRingHeavy}`;
 
   const kwList = getKeywords(unit);
   const kwHtml = kwList.map(k => `<span class="bc-kw-tag"${KEYWORD_TEXT[k] ? ` data-tip="${esc(KEYWORD_TEXT[k])}"` : ''}>${k}</span>`).join('');
   const abilityHtml = card.ability
     ? `<span class="bc-ability-pip" data-tip="${esc(card.ability)}">⚡</span>`
     : '';
-  const bonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.objSideBonus || 0) + (unit.debugSideBonus || 0);
-  const maxArmor = maxArmorHits(unit);
-  const remaining = maxArmor - unit.armorHits;
+  const bonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.objSideBonus || 0) + (unit.debugSideBonus || 0) + (unit.dynamicSideBonus || 0);
   const armorPips = maxArmor > 0
     ? Array.from({ length: maxArmor }, (_, i) =>
         `<span class="armor-pip ${i < remaining ? 'full' : 'spent'}">◆</span>`
       ).join('')
     : '';
 
-  const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR', Commander:'CMD', Naval:'NAV' };
+  const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR' };
   // rotatedDir only (Change Formation 124 / Field Engineer 91) — no owner/viewer swap.
   // A card's printed N/E/S/W always shows at physical N/E/S/W, matching hand and getSideValue
   // (see state.js — the matching P2_FLIP there was removed 2026-08-14 for the same reason).
   const rn = rotatedDir('n', unit.rotation), re = rotatedDir('e', unit.rotation);
   const rs = rotatedDir('s', unit.rotation), rw = rotatedDir('w', unit.rotation);
   const baseN = card[rn], baseE = card[re], baseS = card[rs], baseW = card[rw];
-  const dn = baseN + bonus;
-  const ds = baseS + bonus;
-  const de = baseE + bonus;
-  const dw = baseW + bonus;
+  // Match getSideValue (state.js) exactly: include each side's own perm_${d} bonus (Long
+  // War Commander, H24 — previously missing here entirely, so a deployed H24 bonus would
+  // show on neither side's number even though combat resolution already used it) and floor
+  // at 0 (doc 01 §16 / doc 02 Q127 — previously unclamped here, so the debug panel's negative
+  // buff could show an impossible negative stat the real combat math would never produce).
+  const dn = Math.max(0, baseN + bonus + (unit[`perm_${rn}`] || 0));
+  const ds = Math.max(0, baseS + bonus + (unit[`perm_${rs}`] || 0));
+  const de = Math.max(0, baseE + bonus + (unit[`perm_${re}`] || 0));
+  const dw = Math.max(0, baseW + bonus + (unit[`perm_${rw}`] || 0));
   // Any side no longer matching its printed value is flagged gold (increased) or red
   // (decreased) — every stat-changing effect (objective bonuses, Hero bonuses, command
-  // effects, the debug panel) funnels through the same tempSideBonus/grantedSideBonus/
-  // objSideBonus/debugSideBonus fields, so one comparison per side covers all of them.
+  // effects, Inspire/Muster's live recalculation, the debug panel) funnels through the same
+  // tempSideBonus/grantedSideBonus/objSideBonus/debugSideBonus/dynamicSideBonus fields, so
+  // one comparison per side covers all of them.
   const dirClass = (val, base) => val > base ? ' class="bc-dir-up"' : val < base ? ' class="bc-dir-down"' : '';
+  // Status strip (suppressed/destroyed state + rotation) — a flow row between the stats
+  // grid and the keyword row, NOT position:absolute. The old .bc-rotation/.bc-state were
+  // both pinned to the same bottom corners the keyword row naturally occupies (bc-dirs is
+  // flex:1, so bc-keyword-row is always pushed to the card's bottom edge), which meant a
+  // suppressed+rotated card with any keyword tag would visibly overlap "SUP"/"⟳" on top of
+  // the tag text. Putting both in their own flow row before the keyword row removes the
+  // collision structurally instead of only for today's specific cards.
+  const statusLeft = unit.state === 'suppressed'
+    ? '<span class="bc-status-icon bc-status-suppressed" title="Suppressed — cannot attack">⊘ SUP</span>'
+    : unit.state === 'destroyed'
+      ? '<span class="bc-status-icon bc-status-destroyed" title="Destroyed">DEAD</span>'
+      : '';
+  const statusRight = unit.rotation
+    ? `<span class="bc-status-icon bc-status-rotation" title="Rotated ${unit.rotation}°">⟳${unit.rotation}°</span>`
+    : '';
+  const statusStripHtml = (statusLeft || statusRight)
+    ? `<div class="bc-status-strip"><span class="bc-status-left">${statusLeft}</span><span class="bc-status-right">${statusRight}</span></div>`
+    : '';
   if (card && card.type === 'unit') {
     el.innerHTML = `
       <div class="bc-name">${card.name}</div>
@@ -177,11 +244,9 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
         <div${dirClass(ds, baseS)}>${ds}</div>
         <div></div>
       </div>
+      ${statusStripHtml}
       ${(kwHtml || abilityHtml) ? `<div class="bc-keyword-row">${kwHtml}${abilityHtml}</div>` : ''}
       ${armorPips ? `<div class="bc-armor">${armorPips}</div>` : ''}
-      ${unit.rotation ? `<div class="bc-rotation" title="Rotated ${unit.rotation}°">⟳${unit.rotation}°</div>` : ''}
-      ${unit.state === 'suppressed' ? '<div class="bc-state">SUP</div>' : ''}
-      ${unit.state === 'destroyed' ? '<div class="bc-state">DEAD</div>' : ''}
     `;
   } else {
     el.innerHTML = `<div class="bc-name">${card?.name ?? '?'}</div>`;
@@ -352,10 +417,32 @@ export function renderHeroZones(state, selectedZone = null) {
       // showed the flat printed cost, which read as "broken" when a discount/tax was pending.
       const discount = ps.pendingHeroDiscount ?? 0;
       const tax = (ps.heroTaxedColumns ?? {})[col] ?? 0;
-      const effectiveCost = card.powerType === 'active' ? Math.max(0, (card.activeCost ?? 0) - discount + tax) : null;
+      // H25's printed cost escalates down each activation (see nextCraftCost, combat.js) —
+      // the displayed cost must track that, not the static printed activeCost, to match what
+      // tryActivateHero (game.js) actually charges.
+      const baseCost = heroId === 'H25' ? nextCraftCost(ps) : (card.activeCost ?? 0);
+      const effectiveCost = card.powerType === 'active' ? Math.max(0, baseCost - discount + tax) : null;
       return `<div class="hero-zone-slot filled${isDropTarget ? ' drop-target' : ''}" data-hero-zone="${role}-${col}">${heroPlacedHtml(card, role, { ready, spent, picked, effectiveCost })}</div>`;
     }).join('');
   }
+}
+
+// ── FxPopupText ───────────────────────────────────────────────────────────────
+// A small floating label that appears at a screen position and rises/fades — for one-shot
+// "this just happened" text that doesn't warrant a full log-only response (e.g. a blocked
+// action). position:fixed + appended at body level, same reasoning as #floating-tip: never
+// clipped by a tile's own overflow:hidden or the board's fitBoardArea transform:scale().
+// Removes itself after the animation ends (with a timeout fallback in case animationend
+// never fires, e.g. under prefers-reduced-motion where the animation is disabled outright).
+export function showFxPopup(x, y, text) {
+  const el = document.createElement('div');
+  el.className = 'fx-popup-text';
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  el.textContent = text;
+  document.body.appendChild(el);
+  el.addEventListener('animationend', () => el.remove());
+  setTimeout(() => el.remove(), 1200);
 }
 
 // ── HQ / fuel / turn display ──────────────────────────────────────────────────

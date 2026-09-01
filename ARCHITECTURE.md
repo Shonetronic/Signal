@@ -4,6 +4,8 @@
 
 **Rule:** If you write code that contradicts something in this doc, update this doc. If something here is wrong, fix it here. Never silently drift.
 
+**Doc set (2026-08-31):** `STATUS.md` is the current-state implementation summary (edited in place, no history); `CHANGELOG.md` is the append-only detailed history (never edited after the fact); this file is the code-structure reference, with its own terse Session Log below for quick module-level orientation. Don't duplicate the same fact across all three — put current facts in STATUS.md, structure/architecture here, and narrative "what happened and why" in CHANGELOG.md.
+
 ---
 
 ## Session Log
@@ -32,6 +34,8 @@
 | 20 | 2026-08-01 to 08-13 | Hero Command Layer — 4-slot hero roster/zones per player (`heroZones` indexed by board column), Activated + Passive hero powers, Hero Phase turn logic tied to the objective escalation schedule (L1-L4 = all 4 roster Heroes), hero roster selection wired into the deck builder. See the "Hero Command Layer" section below. |
 | 21 | 2026-08-14 | Fixed P2 board-card stat display bug — removed the owner-based P2_FLIP from `getSideValue` (state.js) and the matching opponent-viewer swap from `buildBoardCard` (ui.js). Both were the other half of session 12's per-viewer board rotation, whose visual half was reverted 2026-07-30; left in place, they silently swapped a P2 unit's N/S and E/W the instant it was placed, mismatching what was just shown in hand. Also retired Hero Combined Arms General (109). |
 | 22 | 2026-08-14 | Empty-Board HQ Strike (GDD Locked Decision) — `canStrikeHQDirectly`/`resolveEmptyBoardStrike` in `combat.js`, wired into all 3 places a unit's attack can resolve in `game.js` (idle click, post-placement auto-target, Double Attack's 2nd-hit re-entry — the last of which also fixes a pre-existing bug where a Double Attack unit's 2nd hit was silently lost if the 1st hit emptied the board). `bot_ai.js`/`bot_player.js`/`selfplay_test.mjs` updated so the bot actually uses it. See `tests/empty_board_hq_strike.test.mjs`. |
+| 23 | 2026-08-31 | **Run 1 — Set 1 truth-lock migration.** Full card pool replaced (65 Units/25 Heroes/35 Commands/5 Objectives, string ids), Naval class and Deathrattle cut (archived), Guard rewritten, Direct HQ built to replace the old reactive Empty-Board HQ Strike, shared destruction chain, Blast/Barrage/Rally/Inspire/Muster/Last Stand/Breakthrough/Maneuver/Escalate/Craft all newly built. See STATUS.md for full detail — this table row exists mainly to keep the log continuous; Run 1's narrative lives in STATUS.md/CLAUDE.md, not here. |
+| 24 | 2026-08-31 | **Run 2 — Maps/Objectives migration**, same day, separate pass, against doc 04 (Objectives & Maps Truth). Normandy + Midway cut (archived in `maps.js`'s new `ARCHIVED_MAPS`); Stalingrad/Kursk/El Alamein/Ardennes kept with corrected objective-slot geometry; all water/Naval terrain code removed. `applyObjectiveEffects` (game.js) rewired from dead pre-Run-1 numeric-id code to the live O1-O5 scheme — this was the actual bug: every Objective had done nothing at all since Run 1 shipped. Universal 1/1/2/2 HQ backbone, fixed column-major multi-objective resolution order with lethal-stop, and all 5 objectives' L1-L4 secondary effects now execute for real. `discountFor` gained an `appliesTo: 'unit'` dimension. Objective identities now randomize after mulligan, not before. `tests/maps.test.mjs` rewritten for the 4-map reality. |
 
 *(Session Log entries above are milestone summaries, not one-per-commit — see `git log` for full commit-level history.)*
 
@@ -42,7 +46,7 @@
 | File | Exports | Depends on |
 |---|---|---|
 | `js/cards.js` | `CARDS`, `CARD_BY_ID` | nothing |
-| `js/maps.js` | `MAPS`, `getTerrain`, `canPlaceOnTerrain` | nothing |
+| `js/maps.js` | `MAPS` (4 live maps), `ARCHIVED_MAPS` (Normandy/Midway, cut Run 2), `getTerrain`, `canPlaceOnTerrain` | nothing |
 | `js/state.js` | see State API below | `cards.js` |
 | `js/combat.js` | see Combat API below (incl. Hero passives — see below) | `cards.js`, `state.js` |
 | `js/ui.js` | see UI API below | `cards.js`, `state.js`, `maps.js` |
@@ -120,19 +124,16 @@ This is the canonical game state object. Firebase stores this exact shape. Do no
 
 ### BoardUnit
 
-```js
-{
-  cardId: number,
-  owner: "p1" | "p2",
-  state: "normal" | "suppressed" | "destroyed",
-  armorHits: number,        // hits absorbed by armor so far (0 until armor starts taking hits)
-  tempKeywords: string[],   // keywords added THIS TURN only (Smoke Screen, Dig In, etc.); cleared by endTurn
-  grantedKeywords: string[], // keywords from commands lasting until owner's NEXT TURN; cleared by startOfTurn
-  tempSideBonus: number,    // +N to all sides this turn (Rally Cry, Entrench, etc.); cleared by endTurn
-  objSideBonus: number,     // +N from objective effects; recalculated each startOfTurn
-  justPlaced: boolean,      // true only on the turn deployed; cleared by endTurn
-}
-```
+This shape drifted out of sync with the real one in `state.js` well before Run 1 (missing
+`grantedSideBonus`/`sideBonusTurns`/`debugSideBonus`/`rotation`/`persistentSpent`/
+`tempExtraAttacks`/`tempExtraAttacksSpent`/`dynamicSideBonus`, and — as of 2026-08-31 —
+`permanentKeywords`, the field added to fix Breakthrough/Blitzkrieg Order/Field Repairs
+grants being wiped every turn). Rather than duplicate it here again, **the canonical, current
+BoardUnit shape is the top-of-file comment in `js/state.js`** — read that instead of trusting
+the snippet that used to live here. The one distinction worth restating since it's easy to
+mix up: `grantedKeywords` clears every `startOfTurn` (for "until your next turn" effects like
+Dig In's Guard grant) — a genuinely *permanent* keyword grant (no "until" on the card) must use
+`permanentKeywords` instead, which nothing ever clears.
 
 ---
 
@@ -245,17 +246,50 @@ Added 2026-08-01 to 2026-08-13 (Session Log 20). Heroes are a separate fixed ros
 **State (`PlayerState`, see `createPlayerState` in `state.js`):**
 - `heroRoster: number[]` — the 4 chosen hero card IDs (fixed for the match).
 - `heroZones: [id|null, id|null, id|null, id|null]` — index = board column (0-3), value = hero cardId currently deployed in that zone, or `null`. Every hero has a `scope` of `"column"` (only affects its own column) or `"board"` (affects the whole board) — scope is an authoritative field on the card, never inferred from ability text (see `tests/hero_primitives.test.mjs`).
-- `heroActivated` / `heroRepositioned` — one Activated Hero Power and one reposition/swap per turn, across all zones. Reset in `startOfTurn`.
-- `heroTriggeredThisTurn: { [heroId]: true }` — gates "first X each turn" passives so each fires at most once per owner turn. Reset in `startOfTurn`.
-- `heroesActivatedEver: number[]` — every distinct hero whose Activated Power has fired this **match** (not per-turn), never cleared. Used by cards like Veteran Signal Corps (119).
-- `lastUnitClass` — tracks the class of the last Unit played, for Combined Arms General (109)'s "mixed-class army" trigger.
+**Corrected 2026-08-31 (post-Run-1 QA pass) — this whole section was pre-Run-1 stale**: old
+numeric Hero ids, a `heroActivated`/`heroesActivatedEver` shape that no longer exists, and Fuel
+cap numbers (6/8) that were already wrong even before the migration (locked value is 9 base /
+11 with Logistics Chief). Rewritten against the actual current code:
+- `heroesActivatedThisTurn: string[]` — Hero ids whose Active Power has fired this turn. Each
+  deployed Hero may activate once per turn; different Heroes may each activate in the *same*
+  turn (locked 2026-08-17 — this replaced an older single-activation-per-turn-total model, which
+  is what made Coordinated Orders' old "extra activation" effect redundant and retired). Reset
+  in `startOfTurn`.
+- `heroRepositioned: boolean` — one Hero Phase reposition/deployment per turn. Reset in
+  `startOfTurn`. Command Shuffle (C15) reuses the same pick-up/drop UI flow but explicitly does
+  *not* consume or require this flag (see `handleHeroZoneClick`'s `shuffleActive` branch).
+- `heroTriggeredThisTurn: { [heroId]: true }` — gates "first X each turn" passives (Objective
+  Marshal H04, Infantry Commander H08, Emergency Logistics Officer H21) so each fires at most
+  once per owner turn. Reset in `startOfTurn`.
+- `heroActivatedLastTurn: boolean` — snapshot of "did I activate any Hero Power on my own
+  previous turn," taken at `startOfTurn` before the current turn's tracking resets.
 
-**Hero Phase timing:** `runHeroPhase` (`game.js`) deploys roster Heroes on the same schedule as objective escalation — a Hero becomes available to deploy at each of Objective Levels 1-4 (round 2, 4, 6, 8), not on a separate pre-game step.
+**Hero Phase timing:** `runHeroPhase` (`game.js`) deploys roster Heroes on the same schedule as
+objective escalation — a Hero becomes available to deploy at each of Objective Levels 1-4
+(round 2, 4, 6, 8), not on a separate pre-game step.
+
+**On-play passive ordering (fixed 2026-08-31):** a placed Unit's own On Play (Craft's drawback,
+or the Aircraft Maneuver On Play) must resolve *before* Objective Marshal/Infantry Commander/
+Emergency Logistics Officer check (doc 01 §22) — the PLACING handler had this backwards for the
+whole of Run 1. For a synchronous On Play this was a straight reorder; the Aircraft Maneuver On
+Play needs a UI round-trip, so `checkHeroPassivesOnPlace` is skipped in PLACING for that one
+case and called instead from `resolveUnitManeuverDestination` once the Maneuver actually
+resolves.
 
 **Where the logic lives:**
-- **Pure, tested hero passives** live in `combat.js` alongside ordinary combat resolution: `checkHeroPassivesOnPlace` (on-place triggers: Objective Marshal 94, Infantry Commander 104, Combined Arms General 109, Conventional Warfare Commander 110) and `checkCounteroffensiveGeneral` (101, fires on the Suppression-*applying* side, not on removal). Covered by `tests/hero_phase.test.mjs` and `tests/hero_primitives.test.mjs`.
-- **Hero Power dispatch** (`heroTargetKeys`, `applyHeroPower` — both switch-on-hero-id, same pattern as the objective/command switches below) and **DOM wiring** (`showHeroDeploy`, `deployHero`, `handleHeroZoneClick`, `tryActivateHero`, `resolveHeroTargeting`) live in `game.js`, uncovered by `node:test` — same gap as the objective/command switches (see "Deferred" section below and the project's optimization plan for the plan to close it).
-- **Fuel cap override**: `fuelCapOf` in `state.js` raises the cap from 6 to 8 while Logistics Chief (89) is deployed in any zone — read this instead of a hardcoded `6` anywhere fuel capacity matters.
+- **Pure, tested hero passives** live in `combat.js` alongside ordinary combat resolution:
+  `checkHeroPassivesOnPlace` (on-place triggers: Objective Marshal H04, Infantry Commander H08,
+  Emergency Logistics Officer H21) and `checkCounteroffensiveGeneral` (H06, fires on the
+  Suppression-*applying* side, not on removal). Covered by `tests/hero_phase.test.mjs` and
+  `tests/hero_primitives.test.mjs`.
+- **Hero Power dispatch** (`heroTargetKeys`, `applyHeroPower` — both switch-on-hero-id, same
+  pattern as the objective/command switches below) and **DOM wiring** (`showHeroDeploy`,
+  `deployHero`, `handleHeroZoneClick`, `tryActivateHero`, `resolveHeroTargeting`) live in
+  `game.js`, uncovered by `node:test` — same gap as the objective/command switches (see
+  "Deferred" section below).
+- **Fuel cap override**: `fuelCapOf` in `state.js` raises the cap from 9 to 11 while Logistics
+  Chief (H02) is deployed in any zone — read this instead of a hardcoded `9` anywhere fuel
+  capacity matters.
 
 ---
 
@@ -305,16 +339,31 @@ generateGameCode() → string
 
 These are locked decisions — don't reinvent them.
 
+**Status (updated 2026-09-01):** all 16 keywords below are fully built, wired into the current
+`H01`-`H25`/`C01`-`C35`/`I1`-`A65` id scheme, and unit-tested — including Maneuver/Escalate/Craft,
+which this table used to (wrongly, as of 2026-08-31) call out as "not yet built." Every Hero
+Active and Command has a real implementation; see `STATUS.md` for the current-state summary and
+`CHANGELOG.md` for the closure passes that finished this.
+
 | Keyword | How it resolves |
 |---|---|
-| **Guard** | UI enforces targeting: if a Guard unit is adjacent to the attacker, it must be the target. Guard is ignored if the unit is Suppressed. `resolveDeployment` trusts the caller passed a legal target. |
+| **Guard** | Attacker-specific legal-target priority (doc 01 §10, doc 02 Q92-Q100), NOT adjacency-based protection. `getAttackableTargets` (combat.js) computes each attacker's own raw candidate pool (adjacent, or row/column for Bombard), then restricts to Guard candidates if any exist — Suppressed Guards still count, Bombard no longer bypasses Guard, Double Attack's 2nd hit re-evaluates fresh (no more `skipGuard`). |
+| **Precision** | New (2026-08-31). Ignores Guard priority entirely; no range effect by itself. Checked first in `getAttackableTargets`. |
 | **Armor** | Absorbs 1 hit before state changes. Tracked via `armorHits` on BoardUnit. `applyHit` handles this. |
 | **Heavy Armor** | Absorbs 2 hits. Same mechanism as Armor, `maxArmorHits` returns 2. |
-| **Bombard** | Unit can attack any enemy in its entire row or column (not just adjacent). Bypasses Guard enforcement. Implemented in `getBombardTargets` in combat.js. |
-| **Double Attack** | After the first attack resolves, the unit stays selected and targeting mode re-enters automatically — player picks a second target. Guard is bypassed on the second hit (`skipGuard=true`). |
-| **Breakthrough** | After Destroying an enemy, unit can slide into the vacated tile and attack again. **Deferred — not implemented in Phase 1.** For now, Breakthrough is a stat card with no special mechanic. |
-| **Airborne** | Ignores terrain restrictions. **Terrain not implemented in Phase 1**, so Airborne has no mechanical effect yet. Card still shows keyword. |
-| **Inspire** | Adjacent friendly units gain +1 to all sides. **Deferred — not implemented in Phase 1.** Requires tracking adjacency every time a unit moves or is placed. |
+| **Bombard** | Unit can attack any enemy in its entire row or column (not just adjacent), no blocker check. Implemented in `getBombardTargets` in combat.js. No longer bypasses Guard (see Guard above). |
+| **Blast** | New (2026-08-31). On a successful primary Hit, also Hits enemies directly left/right of the target relative to attack direction. `blastSecondaryKeys`/`resolveSecondaryHits` in combat.js, wired into `resolveSingleAttack`. |
+| **Barrage** | New (2026-08-31). On a successful primary Hit, also Hits enemies farther along the forward ray beyond the target, no blocker check. `barrageSecondaryKeys` in combat.js. |
+| **Double Attack** | Persistent attack allowance = 2 instead of 1 (`persistentAllowance` in state.js). Sits on top of the new persistent+temporary attack-allowance model (`remainingAttacks`/`spendAttack`/`grantTempAttacks`/`resetPersistentAttacks`) — consumption order is locked persistent-then-temporary; an explicit reset restores persistent only. |
+| **Breakthrough** | Implemented 2026-08-31 via the shared destruction chain (`resolveDestructionChain`/`applyPostDestructionEffects` in combat.js) — triggers from the Unit that caused a destruction, after that destroyed Unit's own Last Stand resolves. |
+| **Rally** | Implemented 2026-08-31 (`checkRally` in combat.js). Triggers whenever a Rally Unit declares/executes an attack, success not required; never triggers on Direct HQ. |
+| **Inspire** | Implemented 2026-08-31 as a dynamic aura (`computeDynamicSideBonus`/`recalculateDynamicStats` in combat.js) — adjacent friendly Units get +1 all sides per adjacent Inspire source, recalculated after every placement/movement/destruction. Feeds `getSideValue` via a new `dynamicSideBonus` field. |
+| **Muster** | Implemented 2026-08-31, same dynamic-recalculation mechanism as Inspire — +1 all sides per OTHER friendly Infantry controlled, board-wide. |
+| **Last Stand** | Implemented 2026-08-31 as a Unit keyword via the shared destruction chain (distinct from the old same-named Command, which is now archived). |
+| **Maneuver** | Move a friendly Unit to any other empty, legal tile — no adjacency/range limit, terrain restrictions still apply. Either a Unit's own On Play (A55/A56/A61-A63/A65 — 2-step source-then-destination flow) or a Hero/Command effect (H16, C21/C27/C35) choosing a target Unit. Does not retrigger On Play; does not reset attacks unless the specific effect says so. `getManeuverTargets`/`resolveManeuver` in combat.js. |
+| **Escalate** | First use of a named Escalate card in a match resolves its base effect; every use after the first resolves the upgraded version instead (bigger bonus or more targets, per card). Tracked by card name, per player, per match (`escalateUses` on PlayerState) — two physical copies share the count. Current cards: C26/C34 (boosted amount), C27/C32 (affects up to 2 targets instead of 1). |
+| **Craft** | H25 Chief Aircraft Engineer only. Generates 3 candidate Aircraft (random stats, one of Bombard/Double Attack/Armor, plus a drawback), player picks 1 to add to hand. Activation cost starts at 5 Fuel and drops by 1 each use (5→4→3→2→1, floor 1), tracked per player for the rest of the match. `generateCraftCandidates`/`craftCandidateToCard`/`nextCraftCost` in combat.js. |
+| **Airborne** | Retired — not part of the new Set 1 truth (Aircraft has innate unrestricted terrain access instead; see `maps.js`). |
 
 ---
 
