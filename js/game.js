@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS, ensureGeneratedCard } from './cards.js?v=1788289776';
+import { CARD_BY_ID, CARDS, ensureGeneratedCard } from './cards.js?v=1788290580';
 import {
   createInitialState,
   startOfTurn,
@@ -27,19 +27,22 @@ import {
   hasEscalated,
   markEscalateUse,
   expireTempFuelGrant,
-} from './state.js?v=1788289776';
-import { getAttackableTargets, resolveSingleAttack, tileKey, columnKeys, unitsInColumn, unitsOnBoard, checkHeroPassivesOnPlace, removeSuppression, checkCounteroffensiveGeneral, hasColumnFreedom, evaluateDirectHQ, recalculateDynamicStats, checkRally, resolveDestructionChain, applyPostDestructionEffects, getManeuverTargets, resolveManeuver, generateCraftCandidates, craftCandidateToCard, resolveCraftDrawback, nextCraftCost, advanceCraftCost, applyHandBuff, getObjectivePickEffectType, computeObjectivePickTargets, describeDynamicSideBonus } from './combat.js?v=1788289776';
-import { renderBoard, renderHand, renderHQ, appendLog, heroCardHtml, renderHeroZones, showFxPopup } from './ui.js?v=1788289776';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1788289776';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby, updatePlayerState } from './firebase.js?v=1788289776';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetObjectiveCard, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn, debugRemoveCard } from './debug.js?v=1788289776';
-import { STARTER_DECKS, loadCustomDecks, validateDeck, validateHeroRoster } from './decks.js?v=1788289776';
-import { runBotTurn } from './bot_player.js?v=1788289776';
-import { bestHeroDeployment } from './bot_ai.js?v=1788289776';
+} from './state.js?v=1788290580';
+import { getAttackableTargets, resolveSingleAttack, tileKey, columnKeys, unitsInColumn, unitsOnBoard, checkHeroPassivesOnPlace, removeSuppression, checkCounteroffensiveGeneral, hasColumnFreedom, evaluateDirectHQ, recalculateDynamicStats, checkRally, resolveDestructionChain, applyPostDestructionEffects, getManeuverTargets, resolveManeuver, generateCraftCandidates, craftCandidateToCard, resolveCraftDrawback, nextCraftCost, advanceCraftCost, applyHandBuff, getObjectivePickEffectType, computeObjectivePickTargets, describeDynamicSideBonus } from './combat.js?v=1788290580';
+import { renderBoard, renderHand, renderHQ, appendLog, heroCardHtml, renderHeroZones, showFxPopup } from './ui.js?v=1788290580';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1788290580';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby, updatePlayerState } from './firebase.js?v=1788290580';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetObjectiveCard, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn, debugRemoveCard } from './debug.js?v=1788290580';
+import { STARTER_DECKS, validateDeck, validateHeroRoster } from './decks.js?v=1788290580';
+import { runBotTurn } from './bot_player.js?v=1788290580';
+import { bestHeroDeployment } from './bot_ai.js?v=1788290580';
 
 // ── Deck selection ────────────────────────────────────────────────────────────
-// Tiles are rendered from STARTER_DECKS + saved custom decks. Custom decks are
-// re-validated here because card data may have changed since they were saved.
+// Tiles are rendered from STARTER_DECKS only in this client build — custom decks (built
+// via the lobby's Deck Builder) are deliberately excluded from this picker (see the
+// publish commit message): Deck Builder access doesn't put custom decks in front of a
+// match-starting player mixed in with the curated 8. validateDeck/validateHeroRoster are
+// still used below for the final pre-match sanity check, unrelated to this screen.
 // Starters keep data-deck="aggro" etc. — the selfplay harness clicks by that.
 let deckChoices = []; // parallel to data-choice indices on the tiles
 
@@ -60,28 +63,6 @@ function renderDeckGrid() {
         <div class="deck-flavor">${escapeHtml(d.flavor)}</div>
         <div class="deck-ap">${d.ids.length} cards</div>
       </div>`);
-  }
-
-  for (const d of loadCustomDecks()) {
-    const v = validateDeck(d.ids);
-    const hv = validateHeroRoster(d.heroIds ?? []);
-    if (v.valid && hv.valid) {
-      deckChoices.push({ ids: d.ids, heroIds: d.heroIds ?? [] });
-      grid.insertAdjacentHTML('beforeend',
-        `<div class="deck-option" data-choice="${deckChoices.length - 1}">
-          <div class="deck-name">${escapeHtml(d.name)}</div>
-          <div class="deck-flavor">Custom deck</div>
-          <div class="deck-ap">${d.ids.length} cards</div>
-        </div>`);
-    } else {
-      const errors = [...v.errors, ...hv.errors];
-      grid.insertAdjacentHTML('beforeend',
-        `<div class="deck-option deck-invalid" title="${escapeHtml(errors.join(' '))}">
-          <div class="deck-name">${escapeHtml(d.name)}</div>
-          <div class="deck-flavor">INVALID — ${escapeHtml(errors[0])} Fix it in the Deck Builder.</div>
-          <div class="deck-ap">${d.ids.length} cards</div>
-        </div>`);
-    }
   }
 }
 

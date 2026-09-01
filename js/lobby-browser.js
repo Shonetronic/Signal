@@ -1,12 +1,14 @@
-// Main menu script: local play + code-based create/join, plus the open-lobby browser
-// (host a lobby with a fixed map, browse and join others without typing a code).
-// vs AI / Deck Builder entry points are deliberately excluded from this client build
-// (see the publish commit message) — the underlying pages/code are untouched, just
-// unreachable from this lobby.
+// Main menu script: local play + code-based create/join + Deck Builder, plus the
+// open-lobby browser (host a lobby with a fixed map, browse and join others without
+// typing a code). vs AI is deliberately excluded from this client build (see the
+// publish commit message) — the underlying game.html?ai=1 path/bot code is untouched,
+// just unreachable from this lobby. Custom decks built here are also deliberately kept
+// out of the in-match deck-selection screen (see renderDeckGrid, game.js) — Deck
+// Builder access doesn't mean custom decks show up mixed into the curated picker.
 import { generateGameCode, initAuth, getDisplayName, setDisplayName,
-         createOpenLobby, removeOpenLobby, subscribeOpenLobbies } from './firebase.js?v=1788289776';
-import { filterStale, sortByNewest, formatWaiting } from './lobbies.js?v=1788289776';
-import { MAPS } from './maps.js?v=1788289776';
+         createOpenLobby, removeOpenLobby, subscribeOpenLobbies } from './firebase.js?v=1788290580';
+import { filterStale, sortByNewest, formatWaiting } from './lobbies.js?v=1788290580';
+import { MAPS } from './maps.js?v=1788290580';
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -15,6 +17,10 @@ function escapeHtml(s) {
 // ── Local play + code-based create/join + vs AI (unchanged from the original inline script) ──
 document.getElementById('btn-local').addEventListener('click', () => {
   window.location.href = 'game.html';
+});
+
+document.getElementById('btn-deckbuilder').addEventListener('click', () => {
+  window.location.href = 'deckbuilder.html';
 });
 
 document.getElementById('btn-create').addEventListener('click', () => {
