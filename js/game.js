@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS, ensureGeneratedCard } from './cards.js?v=1788290580';
+import { CARD_BY_ID, CARDS, ensureGeneratedCard } from './cards.js?v=1788366121';
 import {
   createInitialState,
   startOfTurn,
@@ -27,15 +27,15 @@ import {
   hasEscalated,
   markEscalateUse,
   expireTempFuelGrant,
-} from './state.js?v=1788290580';
-import { getAttackableTargets, resolveSingleAttack, tileKey, columnKeys, unitsInColumn, unitsOnBoard, checkHeroPassivesOnPlace, removeSuppression, checkCounteroffensiveGeneral, hasColumnFreedom, evaluateDirectHQ, recalculateDynamicStats, checkRally, resolveDestructionChain, applyPostDestructionEffects, getManeuverTargets, resolveManeuver, generateCraftCandidates, craftCandidateToCard, resolveCraftDrawback, nextCraftCost, advanceCraftCost, applyHandBuff, getObjectivePickEffectType, computeObjectivePickTargets, describeDynamicSideBonus } from './combat.js?v=1788290580';
-import { renderBoard, renderHand, renderHQ, appendLog, heroCardHtml, renderHeroZones, showFxPopup } from './ui.js?v=1788290580';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1788290580';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby, updatePlayerState } from './firebase.js?v=1788290580';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetObjectiveCard, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn, debugRemoveCard } from './debug.js?v=1788290580';
-import { STARTER_DECKS, validateDeck, validateHeroRoster } from './decks.js?v=1788290580';
-import { runBotTurn } from './bot_player.js?v=1788290580';
-import { bestHeroDeployment } from './bot_ai.js?v=1788290580';
+} from './state.js?v=1788366121';
+import { getAttackableTargets, resolveSingleAttack, tileKey, columnKeys, unitsInColumn, unitsOnBoard, checkHeroPassivesOnPlace, removeSuppression, checkCounteroffensiveGeneral, hasColumnFreedom, evaluateDirectHQ, recalculateDynamicStats, checkRally, resolveDestructionChain, applyPostDestructionEffects, getManeuverTargets, resolveManeuver, generateCraftCandidates, craftCandidateToCard, resolveCraftDrawback, nextCraftCost, advanceCraftCost, applyHandBuff, getObjectivePickEffectType, computeObjectivePickTargets, describeDynamicSideBonus } from './combat.js?v=1788366121';
+import { renderBoard, renderHand, renderHQ, appendLog, heroCardHtml, renderHeroZones, showFxPopup, drawFxConnector } from './ui.js?v=1788366121';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1788366121';
+import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby, updatePlayerState } from './firebase.js?v=1788366121';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetObjectiveCard, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn, debugRemoveCard } from './debug.js?v=1788366121';
+import { STARTER_DECKS, validateDeck, validateHeroRoster } from './decks.js?v=1788366121';
+import { runBotTurn } from './bot_player.js?v=1788366121';
+import { bestHeroDeployment } from './bot_ai.js?v=1788366121';
 
 // ── Deck selection ────────────────────────────────────────────────────────────
 // Tiles are rendered from STARTER_DECKS only in this client build — custom decks (built
@@ -312,7 +312,9 @@ let pendingCommandId = null;       // card ID of command awaiting a board target
 let preCommandState = null;        // state snapshot before command-targeting started (for cancel)
 let pendingRallyCryCount = 0;      // remaining Rally Cry target picks (0 = not active)
 let lastChangedKeys = new Set();   // tiles changed by opponent's last move (cleared on own action)
-let lastTransitionFlags = new Map(); // tileKey -> 'suppressed'|'destroyed' this commit, for a one-shot render animation
+let lastTransitionFlags = new Map(); // tileKey -> 'suppressed'|'destroyed'|'armor-absorbed'|'direct-hq' this commit, for a one-shot render animation
+let lastObjectiveTransitionFlags = new Map(); // tileKey -> 'obj-captured'|'obj-leveled' this commit — same one-shot idea, kept separate from lastTransitionFlags since it describes the objective at that tile, not a unit
+let lastHeroActivationKey = null; // "role-col" of the Hero Zone that just fired this commit, or null
 let gameOver = false;
 
 // ── Forward Observer state ─────────────────────────────────────────────────────
@@ -490,7 +492,20 @@ function runHeroPhase(role) {
 
   const roster = ps.heroRoster ?? [];
   const hasFreeZone = (ps.heroZones ?? []).some(z => z == null);
-  if (!roster.length || !hasFreeZone) { commitState(noteLevel(state), []); return; }
+  if (!roster.length || !hasFreeZone) {
+    // Fires synchronously, same click as whatever just called commitState immediately
+    // before this (End Turn — Direct HQ source pulse, objective capture/level flash, both
+    // set on the module-level last* vars right before runHeroPhase runs). Carrying them
+    // forward here instead of defaulting to empty is deliberate: without this, a player
+    // with no free Hero zone (all 4 filled) or no roster would have that flash wiped before
+    // a single frame ever painted, purely because Hero Phase's own state note happened to
+    // run in the same synchronous burst. Safe specifically because this branch never waits
+    // on user input — see the finish() callback below, which does wait (via the deploy
+    // modal) and deliberately does NOT do this, since by the time a human picks a Hero the
+    // original flash is long stale and shouldn't replay.
+    commitState(noteLevel(state), [], lastTransitionFlags, lastObjectiveTransitionFlags, lastHeroActivationKey);
+    return;
+  }
 
   const isFirstHero = (ps.heroZones ?? []).every(z => z == null);
 
@@ -514,11 +529,21 @@ function runHeroPhase(role) {
     return;
   }
 
-  showHeroDeploy(`${role.toUpperCase()} — ${isFirstHero ? 'FIRST HERO' : 'REINFORCEMENT'}`,
-    isFirstHero
-      ? 'Round 2 — deploy your first Hero.'
-      : 'Objective level rose — deploy another Hero.',
-    roster, ps.heroZones, finish);
+  // Delayed so the full-screen modal doesn't cover the End Turn visual sequence still playing.
+  // 1800ms covers the longest piece of that sequence: Direct Hit's HQ flash fires 200ms in and
+  // its "DIRECT HIT" text popup (fx-popup-rise, 1.6s) doesn't finish fading until 1800ms total —
+  // see the End Turn handler. Re-reads roster/heroZones fresh off `state` at fire time rather
+  // than using the values snapshotted above, in case anything legitimately changes in that
+  // window (nothing normally can, since the board isn't meaningfully interactive between End
+  // Turn and this modal, but re-deriving costs nothing and avoids relying on that assumption).
+  setTimeout(() => {
+    const freshPs = state[role];
+    showHeroDeploy(`${role.toUpperCase()} — ${isFirstHero ? 'FIRST HERO' : 'REINFORCEMENT'}`,
+      isFirstHero
+        ? 'Round 2 — deploy your first Hero.'
+        : 'Objective level rose — deploy another Hero.',
+      freshPs.heroRoster ?? [], freshPs.heroZones, finish);
+  }, 1800);
 }
 
 // ── Start game ────────────────────────────────────────────────────────────────
@@ -846,6 +871,19 @@ function flashDirectHit(targetPlayer, amount) {
   showFxPopup(rect.left + rect.width / 2, rect.top, amount > 1 ? `DIRECT HIT ×${amount}` : 'DIRECT HIT');
 }
 
+// Causality pulse, target stage — the delayed half of "source glow -> target flash" (source
+// glow is applied synchronously via the normal transitionFlags path, see UI_FEEDBACK_UPGRADE_
+// PLAN.md §14). Reuses the board-card gold flash directly (same DOM query pattern as
+// flashDirectHit above) rather than a full commitState, since by the time this fires the board
+// has already repainted once and we're only touching already-rendered nodes.
+function flashCausalityTarget(tileKey) {
+  const el = document.querySelector(`.tile[data-key="${tileKey}"] .board-card`);
+  if (!el) return;
+  el.classList.remove('fx-flash-positive');
+  void el.offsetWidth;
+  el.classList.add('fx-flash-positive');
+}
+
 function redraw() {
   if (!state) return;
   // Debug/testing hook only — read-only snapshot for external tooling (e.g. selfplay bot).
@@ -853,10 +891,26 @@ function redraw() {
   window.__SIGNAL_DEBUG__ = { state, uiState, selectedHandCardId, pendingAttackerKey, attackedThisTurn: [...attackedThisTurn.entries()] };
   renderHQ(state);
 
+  // One-shot transition flags (destroy reticle, objective-captured flash, hero-activation glow)
+  // are meant to play exactly once, on the render right after the commitState that set them —
+  // but several code paths (placing a card chief among them) call redraw() directly instead of
+  // going through commitState, and commitState is the only place that used to reset these. Left
+  // alone, a stale flag would keep replaying its animation (and, for objective capture, its
+  // popup text) on every unrelated future redraw until some later commitState happened to
+  // overwrite it. Snapshotting locally and clearing the module-level vars right after this one
+  // render consumes them makes them genuinely one-shot regardless of which path triggered this
+  // redraw.
+  const transitionFlagsForThisRender = lastTransitionFlags;
+  const objectiveTransitionFlagsForThisRender = lastObjectiveTransitionFlags;
+  const heroActivationKeyForThisRender = lastHeroActivationKey;
+  lastTransitionFlags = new Map();
+  lastObjectiveTransitionFlags = new Map();
+  lastHeroActivationKey = null;
+
   if (uiState === "placing") {
-    renderBoard(state, null, getValidTiles(), lastChangedKeys, lastTransitionFlags, getTerrainBlockedTiles());
+    renderBoard(state, null, getValidTiles(), lastChangedKeys, transitionFlagsForThisRender, getTerrainBlockedTiles(), objectiveTransitionFlagsForThisRender);
   } else {
-    renderBoard(state, null, null, lastChangedKeys, lastTransitionFlags);
+    renderBoard(state, null, null, lastChangedKeys, transitionFlagsForThisRender, null, objectiveTransitionFlagsForThisRender);
   }
 
   if (uiState === "targeting" && pendingAttackerKey) {
@@ -947,6 +1001,8 @@ function redraw() {
   // always a legal click). Maneuver's 2nd step also marks the already-chosen source Unit as
   // "locked in" via the existing selectedTileKey-style highlight class, so it's visually obvious
   // the player is now picking a destination, not another Unit.
+  const modeBanner = document.getElementById('mode-banner');
+  if (modeBanner) modeBanner.style.display = 'none';
   if (uiState === 'objective-picking' && state.pendingObjectivePick) {
     const pick = state.pendingObjectivePick;
     const obj = state.objectives[pick.objectiveKey];
@@ -960,12 +1016,16 @@ function redraw() {
         const srcEl = document.querySelector(`[data-key="${pick.sourceKey}"]`);
         if (srcEl) srcEl.classList.add('highlight');
       }
+      if (modeBanner) {
+        modeBanner.textContent = objectivePickBannerText(state, pick);
+        modeBanner.style.display = 'block';
+      }
     }
   }
 
   const handRole = myRole ?? state.initiative;
   renderHand(state[handRole].hand, 'p1-hand', selectedHandCardId, { playerState: state[handRole] });
-  renderHeroZones(state, selectedHeroZone);
+  renderHeroZones(state, selectedHeroZone, heroActivationKeyForThisRender);
 
   const cancelBtn = document.getElementById('btn-cancel');
   if (cancelBtn) {
@@ -1016,9 +1076,11 @@ function syncObjectivePickUiState() {
   }
 }
 
-function commitState(newState, logLines, transitionFlags) {
+function commitState(newState, logLines, transitionFlags, objectiveTransitionFlags, heroActivationKey) {
   lastChangedKeys = new Set(); // player acted — clear opponent highlights
   lastTransitionFlags = transitionFlags ?? new Map();
+  lastObjectiveTransitionFlags = objectiveTransitionFlags ?? new Map();
+  lastHeroActivationKey = heroActivationKey ?? null;
   state = { ...newState, log: [...(newState.log ?? []), ...(logLines ?? [])] };
   if (logLines?.length) appendLog(logLines);
   syncArtyTargetingUiState();
@@ -1137,9 +1199,17 @@ function receiveRemoteState(remoteState) {
 }
 
 function showEndScreen(winner) {
+  // gameOver flips synchronously so every `!gameOver` guard elsewhere (Hero Phase, turn
+  // toasts, etc.) reacts immediately — only the visual reveal is delayed, so the killing
+  // blow's own flash/popup/connector-line sequence gets to finish before the full-screen
+  // overlay covers the board. 1800ms matches the Hero modal's delay (see runHeroPhase): the
+  // longest piece of any single hit's sequence is the "DIRECT HIT" text popup's 1.6s fade,
+  // starting 200ms after the hit lands.
   gameOver = true;
-  document.getElementById('end-winner').textContent = `${winner} WINS`;
-  document.getElementById('end-screen').style.display = 'flex';
+  setTimeout(() => {
+    document.getElementById('end-winner').textContent = `${winner} WINS`;
+    document.getElementById('end-screen').style.display = 'flex';
+  }, 1800);
 }
 
 function checkWin() {
@@ -1423,7 +1493,7 @@ function tryActivateHero(role, col) {
     }
     const paid = { ...state, [role]: { ...spendCostMods(ps), fuel: ps.fuel - cost } };
     const { state: next, log } = applyHeroPower(paid, role, col, hero, null);
-    commitState(next, [...costModLog, ...log]);
+    commitState(next, [...costModLog, ...log], undefined, undefined, `${role}-${col}`);
     checkWin();
     return true;
   }
@@ -1474,7 +1544,7 @@ function resolveHeroTargeting(clickedKey) {
   }
   uiState = 'idle';
   const { state: next, log } = applyHeroPower(state, role, col, hero, clickedKey);
-  commitState(next, log);
+  commitState(next, log, undefined, undefined, `${role}-${col}`);
   checkWin();
 }
 
@@ -1894,7 +1964,25 @@ document.getElementById('board').addEventListener('click', e => {
     // Infantry next to an existing Muster unit left the Muster unit showing its un-buffed base
     // stats until some unrelated later action (an attack, End Turn) happened to recalculate —
     // meaning an attack made in the meantime would have used the wrong (too-low) side value.
+    const dynamicBefore = new Map(
+      Object.entries(newState.board).filter(([, u]) => u).map(([k, u]) => [k, u.dynamicSideBonus || 0])
+    );
     newState = recalculateDynamicStats(newState);
+    // Inspire/Muster causality pulse (§14): unlike Rally/Breakthrough/Last Stand, there's no
+    // single "source" tile to glow first — an aura's effect is a board-wide recalculation, not
+    // a one-shot trigger — so this is a single-stage flash on whichever tiles' dynamicSideBonus
+    // actually went up as a result of this placement (a new Inspire source reaching adjacent
+    // units, a new Infantry raising every Muster unit's count, or the placed Unit itself
+    // benefiting from an existing aura). Scheduled via setTimeout so it fires after whichever
+    // redraw() this handler ends up calling below (there are several early-return branches for
+    // On-Play UI round-trips), rather than depending on any one of them.
+    const dynamicPulseTargets = Object.keys(newState.board).filter(k => {
+      const u = newState.board[k];
+      return u && (u.dynamicSideBonus || 0) > (dynamicBefore.get(k) ?? 0);
+    });
+    if (dynamicPulseTargets.length > 0) {
+      setTimeout(() => dynamicPulseTargets.forEach(flashCausalityTarget), 50);
+    }
     const logLines = [`Placed ${card.name} at ${clickedKey} (${terrain})${discount > 0 ? ` [Armored Spearhead: -${discount} Fuel]` : ''}`];
     state = { ...newState, log: [...(newState.log ?? []), ...logLines] };
     appendLog(logLines); // fire immediately so it displays before any On-Play/Hero-passive lines below
@@ -2070,6 +2158,9 @@ document.getElementById('board').addEventListener('click', e => {
     // Last Stand for any additional Unit destroyed by the same attack's splash).
     const dyingKeys = result.boardMutations.filter(m => m.newUnit === null).map(m => m.key);
     let postDestroyLog = [];
+    // Rally's own causality targets (declared-attack trigger, always evaluated above) seed the
+    // list; Last Stand/Breakthrough targets from each kill get appended below.
+    const causalityTargets = [...rally.causalityTargets];
     if (dyingKeys.length > 0) {
       newState = { ...newState, [attacker]: {
         ...newState[attacker],
@@ -2080,6 +2171,7 @@ document.getElementById('board').addEventListener('click', e => {
         const pd = applyPostDestructionEffects(newState, { unitKey: dyingKey, dyingUnit: rallyState.board[dyingKey], sourceUnitKey: attackerKey });
         newState = pd.state;
         postDestroyLog = [...postDestroyLog, ...pd.log];
+        causalityTargets.push(...pd.causalityTargets);
       }
     }
     newState = recalculateDynamicStats(newState);
@@ -2130,6 +2222,26 @@ document.getElementById('board').addEventListener('click', e => {
         const rect = tile.getBoundingClientRect();
         showFxPopup(rect.left + rect.width / 2, rect.top, 'ARMOR ABSORBED');
       }
+    }
+
+    // Causality pulse (Rally/Breakthrough): attacker glows now via transitionFlags (same
+    // render pass as everything else above); the affected target(s) flash ~150ms later via a
+    // direct DOM toggle, once the board has actually repainted with their new stats. Skip the
+    // attacker's own tile from the delayed list — Breakthrough's current effects all self-buff,
+    // so source and target are the same tile and a second flash on it would just be redundant.
+    if (causalityTargets.length > 0 && newState.board[attackerKey]?.state !== 'destroyed') {
+      transitionFlags.set(attackerKey, 'causality-source');
+    }
+    const delayedCausalityTargets = causalityTargets.filter(k => k !== attackerKey);
+    if (delayedCausalityTargets.length > 0) {
+      setTimeout(() => {
+        const sourceEl = document.querySelector(`.tile[data-key="${attackerKey}"] .board-card`);
+        delayedCausalityTargets.forEach(k => {
+          flashCausalityTarget(k);
+          const targetEl = document.querySelector(`.tile[data-key="${k}"] .board-card`);
+          if (sourceEl) drawFxConnector(sourceEl, targetEl);
+        });
+      }, 150);
     }
 
     commitState(newState, [...rallyLog, ...result.logEntries, ...overrunLog, ...postDestroyLog, ...coGenLog], transitionFlags);
@@ -2254,6 +2366,32 @@ function objectivePickPrompt(objName, instruction) {
   return `${objName.toUpperCase()}: ${instruction}`;
 }
 
+// Single source of truth for each pick effect's step-1 instruction wording, shared between the
+// log line pushed when the pick opens (applyObjectiveEffects, below) and the persistent
+// #mode-banner shown while uiState === 'objective-picking' (redraw()) — the log alone wasn't
+// prominent enough (buried in a scrolling panel) for a player to notice what they're supposed
+// to click.
+const OBJECTIVE_PICK_INSTRUCTIONS = {
+  maneuver: 'choose a friendly Unit to Maneuver',
+  removeSuppression: 'choose a Suppressed friendly Unit to un-suppress',
+  grantGuard: 'choose a friendly Unit to receive Guard',
+  rotate: 'choose a friendly Unit to Rotate',
+};
+
+// Banner text for the current objective pick, covering Maneuver's 2-step case (source, then
+// destination) the same way resolveObjectivePickClick's own log line does.
+function objectivePickBannerText(s, pick) {
+  const obj = s.objectives[pick.objectiveKey];
+  if (!obj) return '';
+  const nm = CARD_BY_ID[obj.cardId]?.name ?? 'Objective';
+  const effectType = getObjectivePickEffectType(obj.cardId, obj.level);
+  if (effectType === 'maneuver' && pick.sourceKey) {
+    const unitName = CARD_BY_ID[s.board[pick.sourceKey]?.cardId]?.name ?? 'Unit';
+    return objectivePickPrompt(nm, `choose a destination for ${unitName}`);
+  }
+  return objectivePickPrompt(nm, OBJECTIVE_PICK_INSTRUCTIONS[effectType] ?? 'choose a target');
+}
+
 // Resumable (2026-09-01): 4 of the 20 secondary effects (Airfield L2, Supply Depot L1, City L1,
 // Artillery Position L1) don't say "random" in their card text, unlike the other 16 — doc 04 §6
 // only locks auto-random selection for effects that DO say "random". Doc 04 is silent on
@@ -2338,7 +2476,7 @@ function applyObjectiveEffects(s, player, resumeAfterKey = null) {
           // targets: player chooses both which friendly Unit and its destination.
           const targets = computeObjectivePickTargets(s, key, 'maneuver', null);
           if (targets.length) {
-            log.push(objectivePickPrompt(nm, 'choose a friendly Unit to Maneuver'));
+            log.push(objectivePickPrompt(nm, OBJECTIVE_PICK_INSTRUCTIONS.maneuver));
             return { state: recalculateDynamicStats(s), log, pendingArtyHits: artyHits, pendingPick: { objectiveKey: key, sourceKey: null } };
           }
           log.push(`${nm} L2: no Unit has a legal Maneuver destination.`);
@@ -2360,7 +2498,7 @@ function applyObjectiveEffects(s, player, resumeAfterKey = null) {
           // Card text doesn't say "random" — player chooses which adjacent Suppressed Unit.
           const targets = computeObjectivePickTargets(s, key, 'removeSuppression', null);
           if (targets.length) {
-            log.push(objectivePickPrompt(nm, 'choose a Suppressed friendly Unit to un-suppress'));
+            log.push(objectivePickPrompt(nm, OBJECTIVE_PICK_INSTRUCTIONS.removeSuppression));
             return { state: recalculateDynamicStats(s), log, pendingArtyHits: artyHits, pendingPick: { objectiveKey: key, sourceKey: null } };
           }
           log.push(`${nm} L1: no adjacent Suppressed Unit.`);
@@ -2385,7 +2523,7 @@ function applyObjectiveEffects(s, player, resumeAfterKey = null) {
           // lands, "has Guard right now" is the eligibility bar.
           const targets = computeObjectivePickTargets(s, key, 'grantGuard', null);
           if (targets.length) {
-            log.push(objectivePickPrompt(nm, 'choose a friendly Unit to receive Guard'));
+            log.push(objectivePickPrompt(nm, OBJECTIVE_PICK_INSTRUCTIONS.grantGuard));
             return { state: recalculateDynamicStats(s), log, pendingArtyHits: artyHits, pendingPick: { objectiveKey: key, sourceKey: null } };
           }
           log.push(`${nm} L1: no eligible friendly Unit.`);
@@ -2418,7 +2556,7 @@ function applyObjectiveEffects(s, player, resumeAfterKey = null) {
           // Formation (C16) and Field Coordinator's Hero Power already use.
           const targets = computeObjectivePickTargets(s, key, 'rotate', null);
           if (targets.length) {
-            log.push(objectivePickPrompt(nm, 'choose a friendly Unit to Rotate'));
+            log.push(objectivePickPrompt(nm, OBJECTIVE_PICK_INSTRUCTIONS.rotate));
             return { state: recalculateDynamicStats(s), log, pendingArtyHits: artyHits, pendingPick: { objectiveKey: key, sourceKey: null } };
           }
           log.push(`${nm} L1: no eligible friendly Unit.`);
@@ -3348,8 +3486,24 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
     newState = { ...newState, [newActive]: drawCards(newState[newActive], 1) };
   }
   newState = startOfTurn(newState);                      // gain fuel for new active player
+  const objectivesBeforeThisTurn = newState.objectives;
   newState = updateObjectiveLevels(newState);            // escalate objective levels
   newState = checkObjectiveControl(newState);            // check majority-adjacent control
+
+  // Capture/level-up feedback — previously silent (both recalculate here every turn with no
+  // transition of any kind). Diffed against the snapshot just above rather than threaded
+  // through updateObjectiveLevels/checkObjectiveControl themselves, so neither pure function
+  // needs to change shape for a UI-only concern.
+  const objectiveTransitionFlags = new Map();
+  for (const [objKey, objAfter] of Object.entries(newState.objectives)) {
+    const objBefore = objectivesBeforeThisTurn[objKey];
+    if (!objBefore) continue;
+    if (objBefore.controller !== objAfter.controller && objAfter.controller) {
+      objectiveTransitionFlags.set(objKey, 'obj-captured');
+    } else if (objBefore.level !== objAfter.level) {
+      objectiveTransitionFlags.set(objKey, 'obj-leveled');
+    }
+  }
 
   // Supply Runner ability: at start of turn, if on a controlled objective → +1 Fuel
   const supplyLog = [];
@@ -3399,7 +3553,7 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   // already redraws (same transitionFlags mechanism as Suppressed/Destroyed).
   const directHQFlags = new Map();
   directHQ.sources.forEach(({ key }) => directHQFlags.set(key, 'direct-hq'));
-  commitState(newState, turnLog, directHQFlags);
+  commitState(newState, turnLog, directHQFlags, objectiveTransitionFlags);
   checkWin();
   // HQ-side result flash/popup — deliberately a beat after the source pulse above (which
   // plays immediately on this same commit) rather than simultaneous, so SOURCE → RESULT
@@ -3408,6 +3562,17 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   // steps, layered over the existing synchronous resolution.
   if (directHQ.hqDamageToP1 > 0) setTimeout(() => flashDirectHit('p1', directHQ.hqDamageToP1), 200);
   if (directHQ.hqDamageToP2 > 0) setTimeout(() => flashDirectHit('p2', directHQ.hqDamageToP2), 200);
+  // One connector line per converting unit, timed to the same 200ms mark as the HQ flash above
+  // — draws "this unit's unused attack" straight to "this HQ damage", the one causality
+  // pairing on the board that's genuinely hard to follow from timing alone (source and result
+  // sit on opposite ends of the screen).
+  directHQ.sources.forEach(({ key, targetPlayer }) => {
+    setTimeout(() => {
+      const fromEl = document.querySelector(`.tile[data-key="${key}"] .board-card`);
+      const toEl = document.getElementById(`${targetPlayer}-hq`);
+      if (fromEl && toEl) drawFxConnector(fromEl, toEl);
+    }, 200);
+  });
 
   // Local hotseat only — both players share this screen, so flash whose turn it now is.
   // Online is handled separately in receiveRemoteState (fires on the receiving client only).
@@ -3717,9 +3882,28 @@ for (const role of ['p1', 'p2']) {
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
+// These 6 "pick one of N" modals (Forward Observer, Radio Operator, Field Reserves, rotate
+// direction, Craft, Hero deploy) all commit their Fuel/cost/activation-lock BEFORE opening —
+// by design, none of them refund on cancel (see e.g. confirmCraftPick's own doc comment) — and
+// none has an external close path, only their own confirm handler. Found 2026-09-02: Escape
+// still fired the generic Cancel button underneath them (via the button's plain .click(), which
+// bypasses whatever is visually on top), silently resetting uiState while leaving the modal
+// itself open and blocking every other click on the page — the player loses whatever they
+// already paid with no way forward except completing the very modal they thought they'd
+// cancelled. "E" (end turn) has the same bypass risk (a raw .click() call ignores that the
+// button is visually obscured), so it's guarded here too.
+const MODAL_IDS_BLOCKING_SHORTCUTS = [
+  'fo-modal', 'radio-op-modal', 'field-reserves-modal',
+  'rotate-direction-modal', 'craft-picker-modal', 'hero-deploy-modal',
+];
+function anyBlockingModalOpen() {
+  return MODAL_IDS_BLOCKING_SHORTCUTS.some(id => document.getElementById(id)?.style.display === 'flex');
+}
+
 document.addEventListener('keydown', e => {
   if (gameOver || !state) return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (anyBlockingModalOpen()) return;
   if (e.key === 'Escape') document.getElementById('btn-cancel').click();
   if (e.key === 'e' || e.key === 'E') document.getElementById('btn-end-turn').click();
 });
@@ -3963,7 +4147,14 @@ function showCraftPickerModal(role) {
   candidates.forEach(card => {
     const slot = document.createElement('div');
     slot.className = 'fo-slot';
-    slot.appendChild(buildPreviewCardDiv(card));
+    const preview = buildPreviewCardDiv(card);
+    // Found 2026-09-02: the preview card had no click handler, only the "CRAFT THIS" button
+    // did — clicking the card itself (the natural move, since every other card-selection UI in
+    // this game, hand cards and hero-deploy cards, IS directly clickable) silently did nothing,
+    // leaving the modal open with the activation cost already spent and nothing added to hand.
+    preview.style.cursor = 'pointer';
+    preview.addEventListener('click', () => confirmCraftPick(card.id));
+    slot.appendChild(preview);
     const btn = document.createElement('button');
     btn.className = 'fo-pos-btn fo-top';
     btn.textContent = 'CRAFT THIS';

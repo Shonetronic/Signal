@@ -9,6 +9,97 @@ Newest first.
 
 ---
 
+## 2026-09-02 — Fixed `?v=` cache-bust drift re-fragmenting `cards.js` into separate module instances (Craft recurrence)
+
+While live-verifying the click-target fix below with an actual screenshot (no test-harness version
+unification), `confirmCraftPick` crashed with `TypeError: Cannot read properties of undefined
+(reading 'name')` and no card reached hand — a clean repeat of the exact bug already fixed once on
+2026-09-01 ("module-instance fragmentation"). Cause was the same: `js/game.js` had drifted to
+importing `cards.js?v=1788362786` while `js/combat.js` still imported `cards.js?v=1788297094` (and
+several other files carried their own independent stale values) — different query strings resolve
+to different ES module instances in the browser, so `registerGeneratedCard` (called from
+`combat.js`'s copy) populated a `CARD_BY_ID` object that `game.js`'s own copy never saw. The
+2026-09-01 fix unified all `?v=` strings at the time, but nothing stops a later single-file edit
+from re-versioning just that one file and quietly reintroducing the split — which is exactly what
+happened here. Fixed the same way: unified every `.js?v=` import across `digital/js/*.js`,
+`index.html`, and `game.html` to one shared value again. **Not a durable fix** — this is a
+structural footgun (manual per-file cache-busting with no enforcement), the second time it's
+caused a full break of Craft specifically; worth a follow-up to make version drift impossible
+rather than just re-synced (e.g. a single shared version constant/build step) rather than relying
+on remembering to re-run the unification by hand each time.
+
+## 2026-09-02 — Fixed Craft candidate cards being unclickable in the picker modal
+
+Follow-up to the Escape/E fix below: player reported the same symptom again ("picked an aircraft
+but haven't received it in hand") after explicitly ruling out pressing Escape. Reproduced live:
+`showCraftPickerModal` built each candidate's preview via `buildPreviewCardDiv`, a plain `<div>`
+with no click listener — only the separate "CRAFT THIS" button beneath it called
+`confirmCraftPick`. Clicking the card itself (the natural move, since hand cards and hero-deploy
+cards ARE directly clickable everywhere else in this game) was a silent dead click: modal stayed
+open, the Fuel/activation cost was already spent by `tryActivateHero` before the modal opened, and
+nothing was added to hand. Fixed by attaching the same `confirmCraftPick(card.id)` handler (plus
+`cursor: pointer`) to the preview card, so either the card or the button now works.
+
+---
+
+## 2026-09-02 — Fixed Escape/E shortcuts breaking Chief Aircraft Engineer and 5 other modals
+
+Per direct report: "chief aircraft engineer didnt give me the card in the hand and it dint cost 1
+less next time." Reproduced live via Playwright before touching any code, rather than guessing:
+activating H25 correctly spent 5 Fuel and locked the once-per-turn activation, but pressing Escape
+instead of clicking a candidate — a completely natural thing to try, given this game's own
+"Esc = cancel" convention shown in the hand-tray hint — left the craft-picker-modal visually open
+and blocking every other click on the page, with the 5 Fuel gone, no card gained, and the next
+activation cost never advanced. Exactly the two symptoms reported.
+
+Root cause: the global Escape handler calls `document.getElementById('btn-cancel').click()`
+directly — a raw DOM method call, which (unlike a real mouse click) ignores z-index/visual
+overlap and fires the button's handler even though the craft-picker-modal is on top of it. That
+generic Cancel handler has zero awareness of `craft-picker-modal` (or any of 5 other same-shaped
+modals: `hero-deploy-modal`, `rotate-direction-modal`, `fo-modal`, `radio-op-modal`,
+`field-reserves-modal` — all "pick one of N, cost already committed before the modal opens, no
+refund by design, no close path other than its own confirm handler"). `uiState` silently resets
+to `'idle'` while the modal itself stays open, leaving the player stuck. The "E" end-turn
+shortcut has the identical bypass risk for the same reason (also a raw `.click()` call).
+
+- Fixed by making both shortcuts a no-op whenever any of the 6 modals is open
+  (`anyBlockingModalOpen()`, game.js) — a shared fix for one shared bug, not a Craft-specific
+  patch, since all 6 modals had the identical gap.
+- **Committed via git plumbing** (`hash-object`/`commit-tree` against an isolated scratch index)
+  rather than the normal add/commit flow: `js/game.js` had a concurrent session's own
+  in-progress uncommitted edits (the Phase A/B gameplay UI feedback work) sharing the same
+  working-tree file at edit time, and a first attempt at a normal `git add` picked up their
+  changes too, mixing them into this commit under this commit's message. Caught before pushing,
+  undone with `git reset --soft`, and rebuilt as a commit containing only the keydown-handler
+  change — their in-progress work was never touched, staged, or lost, just correctly left
+  exactly as they'd left it in the working tree for them to commit themselves.
+- `npm test`: 209/209 (unaffected — DOM-only fix, same ceiling every other game.js-integration
+  fix this session has had: the pure-function suite can't reach this layer at all).
+
+## 2026-09-01 — Fixed Guard not blocking HQ damage on normal-combat destruction
+
+Per direct request: "if guard is killed you should not receive damage." Doc 01's rule ("destroying
+a Unit deals 2 to its OWNER's HQ ... unless Guard reduces it to 0") was already correctly
+implemented in `resolveDestructionChain` (used by command/self-destruct destruction like Sacrifice
+Play — see the existing test `resolveDestructionChain with no replacement: destroying a Guard Unit
+deals 0 HQ damage`), but normal combat destruction goes through a completely separate path —
+`applyHit` (state.js), called directly by `resolveSingleAttack` and `resolveSecondaryHits`
+(Blast/Barrage) — which had no Guard check at all. A Guard Unit destroyed in an ordinary attack, or
+as Blast/Barrage splash, wrongly dealt its owner the full 2 HQ damage instead of 0.
+
+- Fixed inside `applyHit` itself so every caller gets it for free, mirroring
+  `resolveDestructionChain`'s own check (`getKeywords(unit).includes('Guard')`) rather than
+  patching each call site separately.
+- Added 4 tests (`tests/keywords.test.mjs`): direct `applyHit` on a Guard vs. non-Guard Unit, a
+  full `resolveSingleAttack` combat kill, and a Blast-secondary-kill case confirming only the
+  non-Guard kill in a multi-kill attack contributes HQ damage. None of these existed before —
+  exactly why this had no coverage to catch it.
+- **Live-verified** in a real match (debug panel to buff an attacker and pre-suppress two
+  different defenders — one Guard, one not — then attack each): the Guard defender's destruction
+  left the owner's HQ unchanged (30 → 30), while the non-Guard control case correctly dropped HQ
+  by 2 (30 → 28) the same way.
+- `npm test`: 209/209.
+
 ## 2026-09-01 — Added Objective player-choice targeting (4 of 20 secondary effects)
 
 Doc 04 §6 locks auto-random selection only for Objective secondary effects whose card text says

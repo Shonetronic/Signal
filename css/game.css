@@ -268,6 +268,23 @@ body[data-theme="light"] .theme-toggle {
   margin-bottom: 4px;
   font-family: 'Arial Narrow', Arial, sans-serif;
 }
+/* Persistent instruction banner for modes that need a player click but aren't obvious about
+   what to click (currently: Objective player-choice picks — Airfield L2 etc.) — a log line
+   alone wasn't prominent enough (scrolling side panel, easy to miss). Distinct from
+   .turn-info's plain status text: gold border/text reads as "action needed," matching the
+   buff/actionable color language used everywhere else in the UI. Shown/hidden per uiState in
+   redraw() (game.js), not a timed toast — it needs to stay up while the player decides. */
+.mode-banner {
+  font-size: 10px;
+  color: var(--gold);
+  text-align: center;
+  letter-spacing: 0.3px;
+  font-family: 'Arial Narrow', Arial, sans-serif;
+  border: 1px solid var(--gold-dim);
+  border-radius: 3px;
+  padding: 5px 8px;
+  margin-bottom: 2px;
+}
 .side-controls .btn {
   width: 100%;
   padding: 10px 12px;
@@ -413,6 +430,12 @@ body.viewer-p2 .stats-panel {
 .hero-placed.p2 { border-color: var(--p2); background: var(--p2-bg); }
 /* Activation still available this turn — same cue as .board-card.buffed */
 .hero-placed.ready { box-shadow: 0 0 8px 2px var(--gold-glow); }
+/* One-shot fire flash — the ready/spent states above are persistent; nothing previously
+   marked the instant a Power actually resolved. Same FxFlash primitive as everywhere else. */
+.hero-zone-slot.just-activated { animation: fx-flash-glow 0.5s ease-out; --fx-flash-color: rgba(240,192,48,0.85); }
+@media (prefers-reduced-motion: reduce) {
+  .hero-zone-slot.just-activated { animation: none; }
+}
 /* Activation already spent this turn — same dimming language as a suppressed unit */
 .hero-placed.spent { opacity: 0.5; }
 /* Picked up for repositioning — same gold selection cue units use */
@@ -644,6 +667,15 @@ body.viewer-p2 .stats-panel {
 .tile.objective-tile { background: var(--obj-bg); border-color: var(--obj-border); }
 .tile.obj-ctrl-p1 { background: var(--p1-obj-bg) !important; border-color: var(--p1-obj-border) !important; }
 .tile.obj-ctrl-p2 { background: var(--p2-obj-bg) !important; border-color: var(--p2-obj-border) !important; }
+
+/* Control-flip/level-up — previously silent (control and level both recalculate at start of
+   turn with zero transition of any kind). MAJOR-tier (capture, ~0.6s) vs STATE CHANGE-tier
+   (level-up, ~0.35s) via duration, same fx-flash-glow primitive as everywhere else. */
+.tile.objective-tile.obj-just-captured { animation: fx-flash-glow 0.6s ease-out; --fx-flash-color: rgba(240,192,48,0.85); }
+.tile.objective-tile.obj-just-leveled  { animation: fx-flash-glow 0.35s ease-out; --fx-flash-color: rgba(240,192,48,0.6); }
+@media (prefers-reduced-motion: reduce) {
+  .tile.objective-tile.obj-just-captured, .tile.objective-tile.obj-just-leveled { animation: none; }
+}
 /* Objective tile — D design */
 .obj-header {
   position: absolute;
@@ -799,8 +831,41 @@ body.viewer-p2 .stats-panel {
   background: var(--bg-alt);
   border: 1px solid var(--red-glow);
   color: var(--red);
-  animation: fx-popup-rise 0.9s ease-out forwards;
+  animation: fx-popup-rise 1.6s ease-out forwards;
 }
+/* FxConnector — a line drawn from a causing unit to whatever it affected (Rally's targets,
+   Direct Hit's HQ), so the relationship is visible instead of only implied by timing. Single
+   shared full-viewport SVG overlay (#fx-connector-svg in game.html), lines appended/removed by
+   drawFxConnector (ui.js) per occurrence. Sits below .fx-popup-text (z-index 1600) so a popup
+   text never gets crossed out by a line, above the board itself. */
+.fx-connector-svg {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 1550;
+}
+.fx-connector-line {
+  stroke: var(--gold);
+  stroke-width: 2.5;
+  fill: none;
+  opacity: 0;
+  animation: fx-connector-fade 1s ease-out forwards;
+}
+.fx-connector-arrowhead {
+  fill: var(--gold);
+}
+@keyframes fx-connector-fade {
+  0%   { opacity: 0; }
+  15%  { opacity: 0.85; }
+  70%  { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fx-connector-line { animation: none; opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Static, fully visible for the JS removal timeout's duration — no rise/fade motion, but
      still legible (opacity:0 here would just hide the text, defeating the point). */
@@ -886,6 +951,12 @@ body.viewer-p2 .stats-panel {
   border-radius: 2px; padding: 0 3px; line-height: 1.5;
   letter-spacing: 0.3px; cursor: help;
 }
+/* Keyword provenance (§3) — printed (above, unchanged) vs. permanently/temporarily granted.
+   Shape carries the distinction rather than a new hue, so it reads at ~8px without competing
+   with the buff/debuff/protection/movement color language: filled = "locked in," dashed
+   reuses the same idiom Suppressed's card border already uses for "reduced/not-permanent." */
+.bc-kw-tag.kw-permanent { background: var(--gold); color: #1a1408; border-style: solid; }
+.bc-kw-tag.kw-temporary { border-style: dashed; }
 /* Status strip — Zone C: a flow row between the stats grid and the keyword row (bc-dirs
    is flex:1, so this sits just above bc-keyword-row, which is always the last flow child).
    Replaces the old .bc-rotation/.bc-state, which were both position:absolute pinned to the

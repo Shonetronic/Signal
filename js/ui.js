@@ -1,7 +1,7 @@
-import { CARD_BY_ID } from './cards.js?v=1788289776';
-import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir } from './state.js?v=1788289776';
-import { getTerrain } from './maps.js?v=1788289776';
-import { nextCraftCost } from './combat.js?v=1788289776';
+import { CARD_BY_ID } from './cards.js?v=1788366121';
+import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir } from './state.js?v=1788366121';
+import { getTerrain } from './maps.js?v=1788366121';
+import { nextCraftCost } from './combat.js?v=1788366121';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
@@ -42,7 +42,7 @@ const KEYWORD_TEXT = {
 // recomputed per-viewer rotation. Stats shown on a placed card also never flip by owner
 // (see getSideValue in state.js) — a card's printed N/E/S/W always maps to physical
 // N/E/S/W, same as in hand.
-export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null, transitionFlags = null, terrainBlockedKeys = null) {
+export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null, transitionFlags = null, terrainBlockedKeys = null, objectiveTransitionFlags = null) {
   const board = document.getElementById('board');
   board.innerHTML = '';
 
@@ -76,6 +76,15 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
         else if (obj.controller === 'p2') tile.classList.add('obj-ctrl-p2');
         const objCard = CARD_BY_ID[obj.cardId];
         const ctrl = obj.controller;
+        // Control-flip/level-up flash — previously silent: control and level are both
+        // recalculated at start of turn with no transition of any kind, so a player had to
+        // notice the background color or dot track changed on their own. Same one-shot
+        // mechanism as the unit transitionFlags, just a separate map since a tile can never
+        // hold both a unit and an objective (getValidTiles excludes objective tiles from
+        // placement) but conflating the two flag types would still read as more confusing.
+        const objTransition = objectiveTransitionFlags?.get(key);
+        if (objTransition === 'obj-captured') tile.classList.add('obj-just-captured');
+        else if (objTransition === 'obj-leveled') tile.classList.add('obj-just-leveled');
 
         // Header: OBJECTIVE badge + controller
         const header = document.createElement('div');
@@ -141,6 +150,16 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
       }
 
       board.appendChild(tile);
+      // Capture popup — needs the tile's real screen position, so it has to fire after
+      // appendChild (getBoundingClientRect is meaningless before the node is in the
+      // document). Level-up gets the flash above but no popup — the level-dot track already
+      // visibly advances on its own, and a popup on every 2-round escalation for every
+      // objective on the map would be noise the capture moment doesn't have to compete with.
+      if (obj && objectiveTransitionFlags?.get(key) === 'obj-captured' && obj.controller) {
+        const objCard = CARD_BY_ID[obj.cardId];
+        const rect = tile.getBoundingClientRect();
+        showFxPopup(rect.left + rect.width / 2, rect.top, `${obj.controller.toUpperCase()} captured ${objCard?.name ?? 'Objective'}`);
+      }
     }
   }
 }
@@ -166,6 +185,11 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   const directHqSource = transitionFlag === 'direct-hq' ? ' fx-flash-positive' : '';
   // Armor absorb — one-shot protection-blue flash (also FxFlash directly, no new wrapper).
   const armorAbsorbed = transitionFlag === 'armor-absorbed' ? ' fx-flash-protect' : '';
+  // Causality pulse, source stage — the Rally/Breakthrough-triggering unit glows immediately;
+  // the target(s) it affected flash a beat later via flashCausalityTarget (game.js), a direct
+  // DOM className toggle rather than a second transitionFlags cycle (see UI_FEEDBACK_UPGRADE_
+  // PLAN.md §14, "source glow -> target flash").
+  const causalitySource = transitionFlag === 'causality-source' ? ' fx-flash-positive' : '';
   // Protection ring — keyed off REMAINING protection (maxArmorHits - armorHits), not the
   // card's static max, so a Heavy Armor unit's inner ring disappears after its first absorbed
   // hit and the outer ring after its second, matching "a layer of protection being consumed"
@@ -176,10 +200,30 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   const remaining = maxArmor - unit.armorHits;
   const armorRing = maxArmor > 0 && remaining >= 1 ? ' armor-ring' : '';
   const armorRingHeavy = maxArmor > 1 && remaining >= 2 ? ' armor-ring-heavy' : '';
-  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${debuffed ? ' debuffed' : ''}${opponent ? ' opponent-card' : ''}${justSuppressed}${directHqSource}${armorAbsorbed}${armorRing}${armorRingHeavy}`;
+  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${debuffed ? ' debuffed' : ''}${opponent ? ' opponent-card' : ''}${justSuppressed}${directHqSource}${armorAbsorbed}${causalitySource}${armorRing}${armorRingHeavy}`;
 
-  const kwList = getKeywords(unit);
-  const kwHtml = kwList.map(k => `<span class="bc-kw-tag"${KEYWORD_TEXT[k] ? ` data-tip="${esc(KEYWORD_TEXT[k])}"` : ''}>${k}</span>`).join('');
+  // Armor / Heavy Armor are tiers, not stacking keywords (maxArmorHits treats them the same
+  // way — Heavy Armor wins outright) — but a Unit that starts with printed/granted Armor and
+  // then gets upgraded (e.g. Field Repairs) ends up with both strings sitting in its keyword
+  // set, since nothing removes the old 'Armor' entry on upgrade. Collapsing at display time
+  // only, here, covers every provenance combination without needing to touch every grant site.
+  const rawKwList = getKeywords(unit);
+  const kwList = rawKwList.includes('Heavy Armor') ? rawKwList.filter(k => k !== 'Armor') : rawKwList;
+  // Provenance styling (§3): printed (today's look, unchanged) / permanently granted (filled
+  // background) / temporarily granted (dashed border + ⧗ glyph). getKeywords already merges
+  // base+temp+granted+permanent into one deduped list for gameplay logic — this re-derives
+  // provenance per keyword straight from the same 4 already-populated fields (no new grant-site
+  // plumbing needed), printed taking priority over permanent over temporary so a redundant
+  // grant of an already-printed/permanent keyword never downgrades its badge.
+  const printedKws = Array.isArray(card.keyword) ? card.keyword : (card.keyword ? [card.keyword] : []);
+  const kwHtml = kwList.map(k => {
+    const provenance = printedKws.includes(k) ? 'printed'
+      : (unit.permanentKeywords || []).includes(k) ? 'permanent'
+      : 'temporary'; // must be tempKeywords/grantedKeywords — the only remaining source
+    const provClass = provenance === 'permanent' ? ' kw-permanent' : provenance === 'temporary' ? ' kw-temporary' : '';
+    const glyph = provenance === 'temporary' ? '⧗ ' : '';
+    return `<span class="bc-kw-tag${provClass}"${KEYWORD_TEXT[k] ? ` data-tip="${esc(KEYWORD_TEXT[k])}"` : ''}>${glyph}${k}</span>`;
+  }).join('');
   const abilityHtml = card.ability
     ? `<span class="bc-ability-pip" data-tip="${esc(card.ability)}">⚡</span>`
     : '';
@@ -391,7 +435,7 @@ export function heroPlacedHtml(card, owner, { ready = false, spent = false, pick
 
 // Fills both Hero Zone strips from state. A zone holding a hero drops its dashed
 // placeholder chrome (.filled); empty zones keep it.
-export function renderHeroZones(state, selectedZone = null) {
+export function renderHeroZones(state, selectedZone = null, justActivatedKey = null) {
   for (const role of ['p1', 'p2']) {
     const strip = document.getElementById(`hero-zone-${role}`);
     if (!strip) continue;
@@ -422,7 +466,13 @@ export function renderHeroZones(state, selectedZone = null) {
       // tryActivateHero (game.js) actually charges.
       const baseCost = heroId === 'H25' ? nextCraftCost(ps) : (card.activeCost ?? 0);
       const effectiveCost = card.powerType === 'active' ? Math.max(0, baseCost - discount + tax) : null;
-      return `<div class="hero-zone-slot filled${isDropTarget ? ' drop-target' : ''}" data-hero-zone="${role}-${col}">${heroPlacedHtml(card, role, { ready, spent, picked, effectiveCost })}</div>`;
+      // One-shot fire flash — the ready→spent state above is persistent, but nothing
+      // previously marked the instant a power actually resolved. Covers the ~22 of 25 Heroes
+      // that resolve straight through applyHeroPower's instant/targeted paths; H11 (rotate
+      // modal), H16 (2-step maneuver), and H25 (Craft picker modal) resolve through separate
+      // flows and don't set this yet — documented gap, not an oversight.
+      const justActivated = justActivatedKey === `${role}-${col}`;
+      return `<div class="hero-zone-slot filled${isDropTarget ? ' drop-target' : ''}${justActivated ? ' just-activated' : ''}" data-hero-zone="${role}-${col}">${heroPlacedHtml(card, role, { ready, spent, picked, effectiveCost })}</div>`;
     }).join('');
   }
 }
@@ -442,7 +492,30 @@ export function showFxPopup(x, y, text) {
   el.textContent = text;
   document.body.appendChild(el);
   el.addEventListener('animationend', () => el.remove());
-  setTimeout(() => el.remove(), 1200);
+  setTimeout(() => el.remove(), 2000); // safety net only — animationend removes it at 1.6s normally
+}
+
+// ── FxConnector ──────────────────────────────────────────────────────────────
+// Draws a fading line + arrowhead from fromEl's center to toEl's center, into the shared
+// #fx-connector-svg overlay (game.html) — makes "this unit caused that" visible directly
+// instead of only implied by the two flashing near-simultaneously. Takes already-resolved DOM
+// elements (not tile keys) so it works for both board tiles and non-tile targets like the HQ
+// number (flashDirectHit's el). Caller is responsible for timing this alongside whatever flash
+// it's paired with (see the Rally and Direct Hit call sites in game.js).
+export function drawFxConnector(fromEl, toEl) {
+  const svg = document.getElementById('fx-connector-svg');
+  if (!svg || !fromEl || !toEl) return;
+  const a = fromEl.getBoundingClientRect();
+  const b = toEl.getBoundingClientRect();
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', a.left + a.width / 2);
+  line.setAttribute('y1', a.top + a.height / 2);
+  line.setAttribute('x2', b.left + b.width / 2);
+  line.setAttribute('y2', b.top + b.height / 2);
+  line.setAttribute('class', 'fx-connector-line');
+  line.setAttribute('marker-end', 'url(#fx-connector-arrow)');
+  svg.appendChild(line);
+  setTimeout(() => line.remove(), 1200);
 }
 
 // ── HQ / fuel / turn display ──────────────────────────────────────────────────

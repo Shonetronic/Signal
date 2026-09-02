@@ -2,19 +2,17 @@
 // open-lobby browser (host a lobby with a fixed map, browse and join others without
 // typing a code). vs AI is deliberately excluded from this client build (see the
 // publish commit message) — the underlying game.html?ai=1 path/bot code is untouched,
-// just unreachable from this lobby. Custom decks built here are also deliberately kept
-// out of the in-match deck-selection screen (see renderDeckGrid, game.js) — Deck
-// Builder access doesn't mean custom decks show up mixed into the curated picker.
+// just unreachable from this lobby.
 import { generateGameCode, initAuth, getDisplayName, setDisplayName,
-         createOpenLobby, removeOpenLobby, subscribeOpenLobbies } from './firebase.js?v=1788290580';
-import { filterStale, sortByNewest, formatWaiting } from './lobbies.js?v=1788290580';
-import { MAPS } from './maps.js?v=1788290580';
+         createOpenLobby, removeOpenLobby, subscribeOpenLobbies } from './firebase.js?v=1788366121';
+import { filterStale, sortByNewest, formatWaiting } from './lobbies.js?v=1788366121';
+import { MAPS } from './maps.js?v=1788366121';
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 }
 
-// ── Local play + code-based create/join + vs AI (unchanged from the original inline script) ──
+// ── Local play + code-based create/join + Deck Builder ──
 document.getElementById('btn-local').addEventListener('click', () => {
   window.location.href = 'game.html';
 });
