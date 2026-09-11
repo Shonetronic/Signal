@@ -77,7 +77,7 @@
 // "reset attacks" effect (e.g. Maneuver Commander, Scramble) zeroes persistentSpent only and
 // never recreates an already-spent temporary extra attack.
 
-import { CARD_BY_ID } from './cards.js?v=1789117665';
+import { CARD_BY_ID } from './cards.js?v=2026090402';
 
 // ── State factory ────────────────────────────────────────────────────────────
 

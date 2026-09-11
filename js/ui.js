@@ -1,7 +1,7 @@
-import { CARD_BY_ID } from './cards.js?v=1789117665';
-import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir, applyHit, remainingAttacks } from './state.js?v=1789117665';
-import { getTerrain } from './maps.js?v=1789117665';
-import { evaluateDirectHQ, getAttackableTargets, nextCraftCost } from './combat.js?v=1789117665';
+import { CARD_BY_ID } from './cards.js?v=2026090402';
+import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir, applyHit, remainingAttacks } from './state.js?v=2026090402';
+import { getTerrain } from './maps.js?v=2026090402';
+import { evaluateDirectHQ, getAttackableTargets, nextCraftCost } from './combat.js?v=2026090402';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 

@@ -1,6 +1,6 @@
-import { CARD_BY_ID, registerGeneratedCard } from './cards.js?v=1789117665';
-import { getSideValue, getKeywords, attackBeats, applyHit, oppositeDir, unsuppressOnBoard, drawCards, addDiscount, remainingAttacks, spendAttack, grantTempAttacks, resetPersistentAttacks, fuelCapOf, gainFuel, shuffle, addCardToHand } from './state.js?v=1789117665';
-import { canPlaceOnTerrain, getTerrain } from './maps.js?v=1789117665';
+import { CARD_BY_ID, registerGeneratedCard } from './cards.js?v=2026090402';
+import { getSideValue, getKeywords, attackBeats, applyHit, oppositeDir, unsuppressOnBoard, drawCards, addDiscount, remainingAttacks, spendAttack, grantTempAttacks, resetPersistentAttacks, fuelCapOf, gainFuel, shuffle, addCardToHand } from './state.js?v=2026090402';
+import { canPlaceOnTerrain, getTerrain } from './maps.js?v=2026090402';
 
 // Orthogonal directions and their row/col offsets.
 const DIRS = ["n", "e", "s", "w"];

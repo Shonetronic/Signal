@@ -4,9 +4,9 @@
 // publish commit message) — the underlying game.html?ai=1 path/bot code is untouched,
 // just unreachable from this lobby.
 import { generateGameCode, initAuth, getDisplayName, setDisplayName,
-         createOpenLobby, removeOpenLobby, subscribeOpenLobbies } from './firebase.js?v=1789117665';
-import { filterStale, sortByNewest, formatWaiting } from './lobbies.js?v=1789117665';
-import { MAPS } from './maps.js?v=1789117665';
+         createOpenLobby, removeOpenLobby, subscribeOpenLobbies } from './firebase.js?v=2026090402';
+import { filterStale, sortByNewest, formatWaiting } from './lobbies.js?v=2026090402';
+import { MAPS } from './maps.js?v=2026090402';
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
