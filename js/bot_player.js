@@ -3,9 +3,9 @@
 // instead of driving a separate Playwright browser, it clicks the real DOM elements on this
 // page directly — the same elements a human would click. This goes through game.js's existing,
 // unmodified click handlers, so no game logic needed to change to add this feature.
-import { CARD_BY_ID } from "./cards.js?v=1788366121";
-import { discountFor } from "./state.js?v=1788366121";
-import { bestPlacement, bestExistingAttack, findLethal, findCombinedLethal, bestAttackForUnit, scoreCommand, scoreHeroPower, bestHeroPowerTarget } from "./bot_ai.js?v=1788366121";
+import { CARD_BY_ID } from "./cards.js?v=1789117665";
+import { discountFor } from "./state.js?v=1789117665";
+import { bestPlacement, bestExistingAttack, findLethal, findCombinedLethal, bestAttackForUnit, scoreCommand, scoreHeroPower, bestHeroPowerTarget } from "./bot_ai.js?v=1789117665";
 
 const CLICK_DELAY_MS = 350; // pacing so a human watching can follow what the bot is doing
 
@@ -21,6 +21,11 @@ function isGameOver() {
   return !!el && el.style.display !== "none";
 }
 
+function hasOpenBotChoiceModal() {
+  return ["fo-modal", "rotate-direction-modal", "craft-picker-modal"]
+    .some(id => document.getElementById(id)?.style.display === "flex");
+}
+
 async function handleForwardObserver() {
   const modal = document.getElementById("fo-modal");
   if (!modal || modal.style.display === "none") return;
@@ -34,22 +39,15 @@ async function handleForwardObserver() {
   await sleep(CLICK_DELAY_MS);
 }
 
-// Radio Operator on-play: look at top 2 of the deck, put one on top. Binary choice, resolves on
-// a single click — no separate Confirm button (see game.js's showRadioOperatorModal). Note: the
-// old numeric-id Radio Operator card this was built for isn't in the new 125-card pool — kept
-// since the underlying modal/mechanic (js/game.js's showRadioOperatorModal) is still live code,
-// just currently unreachable from any Run-1 card; harmless to leave wired.
-async function handleRadioOperator() {
-  const modal = document.getElementById("radio-op-modal");
-  if (!modal || modal.style.display === "none") return;
-  document.querySelector("#radio-op-cards .fo-pos-btn")?.click();
-  await sleep(CLICK_DELAY_MS);
-}
-
 async function handleArtyTargeting() {
-  const targets = document.querySelectorAll(".tile.targetable");
-  if (targets.length > 0) targets[0].click();
-  await sleep(CLICK_DELAY_MS);
+  for (let i = 0; i < 4; i++) {
+    const debug = readDebug();
+    if (debug?.uiState !== 'arty-targeting') return;
+    const targets = document.querySelectorAll(".tile.targetable");
+    if (targets.length === 0) return;
+    targets[0].click();
+    await sleep(CLICK_DELAY_MS);
+  }
 }
 
 // Objective player-choice targeting (2026-09-01): Airfield L2/Supply Depot L1/City L1/Artillery
@@ -64,11 +62,27 @@ async function handleArtyTargeting() {
 // direction choice is covered separately by handleRotateDirection, which runs every iteration
 // regardless of kind.
 async function handleObjectivePicking() {
-  const debug = readDebug();
-  if (debug?.uiState !== "objective-picking") return;
-  const targets = document.querySelectorAll(".tile.cmd-target");
-  if (targets.length > 0) targets[0].click();
-  await sleep(CLICK_DELAY_MS);
+  for (let i = 0; i < 2; i++) {
+    const debug = readDebug();
+    if (debug?.uiState !== "objective-picking") return;
+    const target = document.querySelector(".tile.cmd-target");
+    if (!target) return;
+    target.click();
+    await sleep(CLICK_DELAY_MS);
+  }
+}
+
+// A Unit with an on-play Maneuver can require two mandatory board choices (source, then
+// destination). These states cannot be cancelled, so resolve one highlighted step per pass.
+async function handleUnitManeuver() {
+  for (let i = 0; i < 2; i++) {
+    const debug = readDebug();
+    if (debug?.uiState !== "unit-maneuver-source" && debug?.uiState !== "unit-maneuver-destination") return;
+    const target = document.querySelector(".tile.cmd-target");
+    if (!target) return;
+    target.click();
+    await sleep(CLICK_DELAY_MS);
+  }
 }
 
 // Change Formation (C16) / Field Coordinator's Hero Power (H11): rotation direction doesn't
@@ -132,7 +146,6 @@ async function playBotTurnSteps() {
 
   for (let i = 0; i < 12; i++) {
     await handleForwardObserver();
-    await handleRadioOperator();
     await handleRotateDirection();
     await handleCraftPicker();
     // Must run before flushPendingUiState below: there's no Cancel button for
@@ -140,17 +153,16 @@ async function playBotTurnSteps() {
     // ever left for flushPendingUiState's generic "click Cancel on anything stale" fallback to
     // find, the bot's turn would hang forever instead of progressing.
     await handleObjectivePicking();
+    await handleUnitManeuver();
     if (isGameOver()) return;
 
     let debug = await flushPendingUiState(readDebug());
     if (!debug?.state) break;
-    const { state, attackedThisTurn } = debug;
+    const { state } = debug;
     const active = state.initiative;
     if (active !== "p2") return; // safety: bot only ever plays its own turn
     const ps = state[active];
-    const attackedMap = new Map(attackedThisTurn);
-
-    const lethal = findLethal(state, active, attackedMap);
+    const lethal = findLethal(state, active);
     if (lethal) {
       clickTile(lethal.attackerKey);
       await sleep(CLICK_DELAY_MS);
@@ -166,7 +178,7 @@ async function playBotTurnSteps() {
     // No single attack finishes the HQ — check whether several of this turn's attackers
     // together do (a human closing out a game would take the whole line, not just the best
     // single swing and then a lesser action next).
-    const combinedLethal = findCombinedLethal(state, active, attackedMap);
+    const combinedLethal = findCombinedLethal(state, active);
     if (combinedLethal) {
       for (const step of combinedLethal) {
         clickTile(step.unitKey);
@@ -187,14 +199,12 @@ async function playBotTurnSteps() {
     });
     const emptyTiles = Object.keys(state.board).filter(k => !state.board[k] && !state.objectives[k]);
     const placement = handUnitIds.length && emptyTiles.length ? bestPlacement(state, active, handUnitIds, emptyTiles) : null;
-    const attack = bestExistingAttack(state, active, attackedMap);
+    const attack = bestExistingAttack(state, active);
 
     const affordableCommandIds = ps.hand.filter(id => { const c = CARD_BY_ID[id]; return c && c.type === "command" && ps.fuel >= c.cost && !deadThisTurn.has(id); });
-    const affordableMissionId = ps.hand.find(id => { const c = CARD_BY_ID[id]; return c && c.type === "mission" && ps.fuel >= c.cost && !deadThisTurn.has(id); });
-
     let bestCommand = null;
     for (const id of affordableCommandIds) {
-      const score = scoreCommand(state, active, id, attackedMap);
+      const score = scoreCommand(state, active, id);
       if (!bestCommand || score > bestCommand.score) bestCommand = { cardId: id, score };
     }
 
@@ -211,7 +221,7 @@ async function playBotTurnSteps() {
         if (!hero || hero.powerType !== "active" || !hero.implemented) continue;
         if (activatedThisTurn.includes(heroId)) continue;
         if (ps.fuel < (hero.activeCost ?? 0) || deadThisTurn.has(`hero:${heroId}`)) continue;
-        const score = scoreHeroPower(state, active, heroId, col, attackedMap);
+        const score = scoreHeroPower(state, active, heroId, col);
         if (!bestHeroPower || score > bestHeroPower.score) bestHeroPower = { heroId, col, score };
       }
     }
@@ -221,8 +231,6 @@ async function playBotTurnSteps() {
     if (attack) candidates.push({ type: "attack", score: attack.score, unitKey: attack.unitKey, targetKey: attack.targetKey, isHQStrike: attack.isHQStrike });
     if (bestCommand) candidates.push({ type: "command", score: bestCommand.score, cardId: bestCommand.cardId });
     if (bestHeroPower) candidates.push({ type: "heroPower", score: bestHeroPower.score, heroId: bestHeroPower.heroId, col: bestHeroPower.col });
-    if (candidates.length === 0 && affordableMissionId !== undefined) candidates.push({ type: "mission", score: 0.1, cardId: affordableMissionId });
-
     if (candidates.length === 0) break; // nothing useful left this turn
 
     candidates.sort((a, b) => b.score - a.score);
@@ -251,9 +259,6 @@ async function playBotTurnSteps() {
       const handAfter = afterDebug?.state?.[active]?.hand?.length ?? handBefore;
       if (handAfter === handBefore) deadThisTurn.add(choice.cardId); // no-op: card never left hand
       await flushPendingUiState(afterDebug);
-    } else if (choice.type === "mission") {
-      clickHandCard(choice.cardId);
-      await sleep(CLICK_DELAY_MS);
     } else if (choice.type === "heroPower") {
       clickHeroZone(active, choice.col);
       await sleep(CLICK_DELAY_MS);
@@ -273,12 +278,25 @@ async function playBotTurnSteps() {
 export async function runBotTurn() {
   await sleep(CLICK_DELAY_MS);
   await handleForwardObserver();
-  await handleRadioOperator();
   await handleArtyTargeting();
   await playBotTurnSteps();
-  await handleForwardObserver();
-  await handleRadioOperator();
-  await handleRotateDirection();
+
+  // The twelfth and final action can itself open a mandatory choice. Drain every modal/board
+  // choice the bot knows how to resolve before checking End Turn, otherwise the interaction
+  // lock correctly leaves the button disabled and P2 appears to hang forever.
+  for (let i = 0; i < 8; i++) {
+    await handleForwardObserver();
+    await handleRotateDirection();
+    await handleCraftPicker();
+    await handleObjectivePicking();
+    await handleUnitManeuver();
+    await handleArtyTargeting();
+
+    let debug = readDebug();
+    if ((!debug || debug.uiState === "idle") && !hasOpenBotChoiceModal()) break;
+    if (debug?.uiState !== "idle") debug = await flushPendingUiState(debug);
+    if ((!debug || debug.uiState === "idle") && !hasOpenBotChoiceModal()) break;
+  }
   if (isGameOver()) return;
 
   const endTurnBtn = document.getElementById("btn-end-turn");

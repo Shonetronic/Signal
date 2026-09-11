@@ -53,15 +53,6 @@ async function handleForwardObserver(page) {
   await page.waitForTimeout(30);
 }
 
-// Radio Operator (111) on-play: look at top 2 of the deck, put one on top. Binary choice,
-// resolves on a single click — no separate Confirm button (see game.js's showRadioOperatorModal).
-async function handleRadioOperator(page) {
-  const modal = page.locator("#radio-op-modal");
-  if (!(await modal.isVisible().catch(() => false))) return;
-  await page.locator("#radio-op-cards .fo-pos-btn").first().click().catch(() => {});
-  await page.waitForTimeout(30);
-}
-
 // Change Formation (C16) / Field Coordinator's Hero Power (H11): direction doesn't affect
 // scoring, always CW.
 async function handleRotateDirection(page) {
@@ -81,6 +72,21 @@ async function handleCraftPicker(page) {
   await page.waitForTimeout(30);
 }
 
+// Found 2026-09-09: neither click below had a bounded timeout or .catch() — both use
+// Playwright's default 30s, and if a click genuinely can't land (e.g. transiently covered by
+// another element), the resulting rejection was uncaught and crashed the whole game instead of
+// just this one deploy attempt. clickOnce gives each click a short budget and one retry — a real
+// transient cover clears well inside that; anything still blocked after two tries is treated the
+// same as "couldn't resolve this modal," which the caller already handles via the STALLED path.
+async function clickOnce(locator, { timeout = 4000, retries = 1 } = {}) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ok = await locator.click({ timeout }).then(() => true).catch(() => false);
+    if (ok) return true;
+    await new Promise(r => setTimeout(r, 150));
+  }
+  return false;
+}
+
 // Resolves the Hero deploy modal (starting pick and later reinforcements) using the same
 // bestHeroDeployment scoring the in-page "vs AI" bot uses, falling back to first-hero/first-zone
 // if state can't be read. An unhandled modal doesn't throw — it silently swallows clicks and the
@@ -97,22 +103,31 @@ async function handleHeroDeploy(page) {
   const choice = state && roster.length ? bestHeroDeployment(state, active, roster, heroZones) : null;
 
   if (choice) {
-    await page.locator(`#hero-deploy-cards .hero-card[data-hero-id="${choice.heroId}"]`).first().click();
+    if (!(await clickOnce(page.locator(`#hero-deploy-cards .hero-card[data-hero-id="${choice.heroId}"]`).first()))) return;
     await page.waitForTimeout(20);
-    await page.locator(".hero-zone-pick").nth(choice.col).click();
+    await clickOnce(page.locator(".hero-zone-pick").nth(choice.col));
   } else {
-    await page.locator("#hero-deploy-cards .hero-card").first().click();
+    if (!(await clickOnce(page.locator("#hero-deploy-cards .hero-card").first()))) return;
     await page.waitForTimeout(20);
-    await page.locator("#hero-deploy-zones .hero-zone-pick:not([disabled])").first().click();
+    await clickOnce(page.locator("#hero-deploy-zones .hero-zone-pick:not([disabled])").first());
   }
   await page.waitForTimeout(30);
 }
 
 async function handleArtyTargeting(page) {
-  const targets = page.locator(".tile.targetable");
-  const count = await targets.count();
-  if (count > 0) await targets.nth(Math.floor(Math.random() * count)).click();
-  await page.waitForTimeout(30);
+  for (let i = 0; i < 4; i++) {
+    const debug = await readDebug(page);
+    if (debug?.uiState !== 'arty-targeting') return;
+    const targets = page.locator(".tile.targetable");
+    const count = await targets.count();
+    if (count === 0) return;
+    // Found 2026-09-09: same fix as flushPendingUiState's unit-maneuver branch — a deferred
+    // Hero Deploy modal can pop up mid-click here too, and this click had neither .catch() nor
+    // a shortened timeout, so it hung the default 30s and crashed the whole game on an
+    // uncaught rejection instead of just missing one attempt.
+    await targets.nth(Math.floor(Math.random() * count)).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(30);
+  }
 }
 
 // Objective player-choice targeting (2026-09-01) — mirrors bot_player.js's handleObjectivePicking
@@ -125,7 +140,11 @@ async function handleObjectivePicking(page) {
   if (debug?.uiState !== "objective-picking") return;
   const targets = page.locator(".tile.cmd-target");
   const count = await targets.count();
-  if (count > 0) await targets.first().click();
+  // Found 2026-09-09: same fix as flushPendingUiState's unit-maneuver branch — this click had
+  // neither .catch() nor a shortened timeout, so a Hero Deploy modal popping up mid-click (its
+  // 1800ms deferred setTimeout) hung this for the default 30s and crashed the game instead of
+  // just missing this attempt for the outer loop to retry.
+  if (count > 0) await targets.first().click({ timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(30);
 }
 
@@ -160,8 +179,29 @@ async function resolveTargetingSmart(page, { attackerKey = null, heroPower = nul
 // placement is always resolved before we loop back — see resolveTargetingSmart). Any new
 // decision made on top of a stale prompt gets silently swallowed instead of registering, so
 // treat this as an anomaly and bail out of it cleanly via Cancel rather than guess a target.
+//
+// Found 2026-09-09: unit-maneuver-source/destination (an On-Play Maneuver Aircraft, e.g.
+// A55/A56/A61/A62/A63/A65) are mandatory uiStates — Cancel is disabled for them (game.js,
+// interaction.js's MANDATORY_UI_STATES) — so blindly clicking #btn-cancel here silently no-ops
+// and this function returns the same stale uiState forever, stalling the run. Resolve those two
+// states the same way bot_player.js's handleUnitManeuver does (click the highlighted board
+// tile) before falling back to Cancel for every other, actually-cancellable pending state.
 async function flushPendingUiState(page, debug) {
   if (!debug || debug.uiState === "idle") return debug;
+  if (debug.uiState === "unit-maneuver-source" || debug.uiState === "unit-maneuver-destination") {
+    // Found 2026-09-09 (round 2): runHeroPhase's Hero Deploy modal is shown via a 1800ms
+    // setTimeout left over from the PREVIOUS turn transition, so it can pop up mid-Maneuver and
+    // cover the board the same way it covers everything else — the tile click below then hangs
+    // for the full default 30s waiting on an element a modal is intercepting. Resolve any
+    // already-visible Hero Deploy modal first, and cap the tile click at 5s so if the modal
+    // appears mid-attempt instead, this bails quickly and the outer per-turn loop's own
+    // handleHeroDeploy call (which runs before flushPendingUiState every iteration) catches it
+    // on the next pass rather than the whole run hanging on one click.
+    await handleHeroDeploy(page);
+    await page.locator(".tile.cmd-target").first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(30);
+    return readDebug(page);
+  }
   await page.locator("#btn-cancel").click().catch(() => {});
   await page.waitForTimeout(30);
   return readDebug(page);
@@ -178,7 +218,6 @@ async function playTurnSmart(page) {
 
   for (let i = 0; i < 12; i++) {
     await handleForwardObserver(page);
-    await handleRadioOperator(page);
     await handleRotateDirection(page);
     await handleCraftPicker(page);
     // Must run before flushPendingUiState below — there's no Cancel button for
@@ -195,13 +234,11 @@ async function playTurnSmart(page) {
     let debug = await readDebug(page);
     debug = await flushPendingUiState(page, debug);
     if (!debug?.state) break;
-    const { state, attackedThisTurn } = debug;
+    const { state } = debug;
     const active = state.initiative;
     const ps = state[active];
-    const attackedMap = new Map(attackedThisTurn);
-
     // 1. Take a lethal attack immediately if one exists.
-    const lethal = findLethal(state, active, attackedMap);
+    const lethal = findLethal(state, active);
     if (lethal) {
       await clickTile(page, lethal.attackerKey);
       await page.waitForTimeout(30);
@@ -214,7 +251,7 @@ async function playTurnSmart(page) {
     }
 
     // 1b. No single attack is lethal — check whether several attackers together are.
-    const combinedLethal = findCombinedLethal(state, active, attackedMap);
+    const combinedLethal = findCombinedLethal(state, active);
     if (combinedLethal) {
       for (const step of combinedLethal) {
         await clickTile(page, step.unitKey);
@@ -236,14 +273,12 @@ async function playTurnSmart(page) {
     });
     const emptyTiles = Object.keys(state.board).filter(k => !state.board[k] && !state.objectives[k]);
     const placement = handUnitIds.length && emptyTiles.length ? bestPlacement(state, active, handUnitIds, emptyTiles) : null;
-    const attack = bestExistingAttack(state, active, attackedMap);
+    const attack = bestExistingAttack(state, active);
 
     const affordableCommandIds = ps.hand.filter(id => { const c = CARD_BY_ID[id]; return c && c.type === "command" && ps.fuel >= c.cost && !deadThisTurn.has(id); });
-    const affordableMissionId = ps.hand.find(id => { const c = CARD_BY_ID[id]; return c && c.type === "mission" && ps.fuel >= c.cost && !deadThisTurn.has(id); });
-
     let bestCommand = null;
     for (const id of affordableCommandIds) {
-      const score = scoreCommand(state, active, id, attackedMap);
+      const score = scoreCommand(state, active, id);
       if (!bestCommand || score > bestCommand.score) bestCommand = { cardId: id, score };
     }
 
@@ -260,7 +295,7 @@ async function playTurnSmart(page) {
         if (!hero || hero.powerType !== "active" || !hero.implemented) continue;
         if (activatedThisTurn.includes(heroId)) continue;
         if (ps.fuel < (hero.activeCost ?? 0) || deadThisTurn.has(`hero:${heroId}`)) continue;
-        const score = scoreHeroPower(state, active, heroId, col, attackedMap);
+        const score = scoreHeroPower(state, active, heroId, col);
         if (!bestHeroPower || score > bestHeroPower.score) bestHeroPower = { heroId, col, score };
       }
     }
@@ -270,8 +305,6 @@ async function playTurnSmart(page) {
     if (attack) candidates.push({ type: "attack", score: attack.score, unitKey: attack.unitKey, targetKey: attack.targetKey, isHQStrike: attack.isHQStrike });
     if (bestCommand) candidates.push({ type: "command", score: bestCommand.score, cardId: bestCommand.cardId });
     if (bestHeroPower) candidates.push({ type: "heroPower", score: bestHeroPower.score, heroId: bestHeroPower.heroId, col: bestHeroPower.col });
-    if (candidates.length === 0 && affordableMissionId !== undefined) candidates.push({ type: "mission", score: 0.1, cardId: affordableMissionId });
-
     if (candidates.length === 0) break; // nothing useful left this turn
 
     candidates.sort((a, b) => b.score - a.score);
@@ -300,9 +333,6 @@ async function playTurnSmart(page) {
       const handAfter = afterDebug?.state?.[active]?.hand?.length ?? handBefore;
       if (handAfter === handBefore) deadThisTurn.add(choice.cardId); // no-op: card never left hand
       await flushPendingUiState(page, afterDebug); // clean up if it landed in command-targeting with no targets
-    } else if (choice.type === "mission") {
-      await clickHandCard(page, choice.cardId);
-      await page.waitForTimeout(30);
     } else if (choice.type === "heroPower") {
       await clickHeroZone(page, active, choice.col);
       await page.waitForTimeout(30);
@@ -353,11 +383,9 @@ async function playOneGame(page) {
 
     await handleHeroDeploy(page);   // reinforcement can fire at the start of a turn
     await handleForwardObserver(page);
-    await handleRadioOperator(page);
     await handleArtyTargeting(page);
     await playTurnSmart(page);
     await handleForwardObserver(page);
-    await handleRadioOperator(page);
     await handleRotateDirection(page);
     await handleCraftPicker(page);
 

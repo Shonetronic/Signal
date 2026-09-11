@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>SIGNAL — Digital Prototype</title>
-  <link rel="stylesheet" href="css/game.css?v=1788366121">
+  <link rel="stylesheet" href="css/game.css?v=1789117665">
 </head>
 <body>
   <!-- Sets the theme before anything paints — see the matching script/comment in index.html.
@@ -40,13 +40,13 @@
     <div class="lobby-title">SIGNAL</div>
     <div class="lobby-subtitle">WWII TACTICAL CARD GAME — PROTOTYPE</div>
 
-    <!-- Step 1 & 2: Deck selection (tiles rendered by game.js from decks.js + localStorage) -->
+    <!-- Steps 2 & 3: Deck selection after the map (tiles rendered by game.js from decks.js + localStorage) -->
     <div id="deck-picker">
       <div class="picker-label" id="picker-label">PLAYER 1 — CHOOSE YOUR DECK</div>
       <div class="deck-grid" id="deck-grid"></div>
     </div>
 
-    <!-- Step 3: Map selection (hidden until both decks chosen) -->
+    <!-- Step 1: Map selection; game.js reveals this first for local and AI play -->
     <div id="map-picker" style="display:none">
       <div class="picker-label">CHOOSE MAP</div>
       <div class="deck-grid" id="map-grid">
@@ -101,13 +101,6 @@
     <button class="btn btn-primary" id="fo-confirm" disabled>Confirm</button>
   </div>
 
-  <!-- ── RADIO OPERATOR MODAL — look at top 2, choose which goes on top ── -->
-  <div id="radio-op-modal" style="display:none;">
-    <div class="fo-title">RADIO OPERATOR</div>
-    <div class="fo-subtitle">Choose which card goes on top of your deck — the other goes to the bottom</div>
-    <div class="fo-cards" id="radio-op-cards"></div>
-  </div>
-
   <!-- ── FIELD RESERVES MODAL — look at top 4, may take one Unit into hand ── -->
   <div id="field-reserves-modal" style="display:none;">
     <div class="fo-title">FIELD RESERVES</div>
@@ -129,6 +122,13 @@
     <div class="fo-title">CRAFT AN AIRCRAFT</div>
     <div class="fo-subtitle">Choose 1 of 3 rolled candidates to add to your hand</div>
     <div class="fo-cards" id="craft-picker-cards"></div>
+  </div>
+
+  <!-- ── QUARTERMASTER MODAL — Quartermaster General (H01) ── -->
+  <div id="quartermaster-modal" style="display:none;">
+    <div class="fo-title">QUARTERMASTER GENERAL</div>
+    <div class="fo-subtitle">Choose 1 of these random cards from your deck — the rest stay in the deck</div>
+    <div class="fo-cards" id="quartermaster-cards"></div>
   </div>
 
   <!-- ── HERO DEPLOY MODAL ── -->
@@ -263,14 +263,14 @@
         <input class="debug-input" type="number" id="debug-turn-value" style="flex:0 0 60px;">
         <button class="debug-btn" id="debug-turn-go">Jump</button>
       </div>
-      <div class="debug-hint">Recalculates objective levels/control for that turn. Does not simulate Fuel/draws/mission timers for turns in between.</div>
+      <div class="debug-hint">Recalculates objective levels/control for that turn. Does not simulate Fuel or draws for turns in between.</div>
     </div>
   </div>
 
   <!-- ── GAME AREA ── -->
   <div id="game-area" class="game-layout" style="display:none">
 
-    <!-- BOARD ROW: preview | stats | board | log | missions -->
+    <!-- BOARD ROW: preview | stats | board | log -->
     <div class="board-row">
 
       <!-- FAR LEFT: large card preview panel -->
@@ -299,8 +299,10 @@
 
         <div class="side-controls">
           <span class="turn-info" id="turn-display">Turn 1 — P1 to play</span>
-          <div class="mode-banner" id="mode-banner" style="display:none;"></div>
+          <div class="mode-banner" id="mode-banner" role="status" aria-live="polite" style="display:none;"></div>
+          <div class="sync-status" id="sync-status" role="status" aria-live="polite" style="display:none;"></div>
           <button class="btn btn-primary" id="btn-end-turn">End Turn</button>
+          <div class="end-turn-summary" id="end-turn-summary" role="status" aria-live="polite" style="display:none;"></div>
           <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
           <button class="btn btn-exit" id="btn-exit">Exit</button>
         </div>
@@ -354,7 +356,7 @@
 
   </div>
 
-  <script type="module" src="./js/game.js?v=1788366121"></script>
+  <script type="module" src="./js/game.js?v=1789117665"></script>
 
 </body>
 </html>

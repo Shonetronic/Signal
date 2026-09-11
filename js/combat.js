@@ -1,6 +1,6 @@
-import { CARD_BY_ID, registerGeneratedCard } from './cards.js?v=1788366121';
-import { getSideValue, getKeywords, attackBeats, applyHit, oppositeDir, unsuppressOnBoard, drawCards, addDiscount, remainingAttacks, spendAttack, grantTempAttacks, resetPersistentAttacks, fuelCapOf, gainFuel } from './state.js?v=1788366121';
-import { canPlaceOnTerrain, getTerrain } from './maps.js?v=1788366121';
+import { CARD_BY_ID, registerGeneratedCard } from './cards.js?v=1789117665';
+import { getSideValue, getKeywords, attackBeats, applyHit, oppositeDir, unsuppressOnBoard, drawCards, addDiscount, remainingAttacks, spendAttack, grantTempAttacks, resetPersistentAttacks, fuelCapOf, gainFuel, shuffle, addCardToHand } from './state.js?v=1789117665';
+import { canPlaceOnTerrain, getTerrain } from './maps.js?v=1789117665';
 
 // Orthogonal directions and their row/col offsets.
 const DIRS = ["n", "e", "s", "w"];
@@ -40,8 +40,8 @@ export function columnKeys(col) {
   return [0, 1, 2, 3].map(row => tileKey(row, col));
 }
 
-// Live units in a column. Destroyed units are excluded — they linger on the board
-// greyed out for readability but are not valid targets or trigger sources.
+// Live units in a column. Destroyed sentinels from legacy/debug snapshots are excluded;
+// ordinary destruction resolution removes the Unit from its tile immediately.
 // `owner` optionally filters to 'p1' | 'p2'.
 export function unitsInColumn(state, col, owner = null) {
   return columnKeys(col).flatMap(key => {
@@ -60,40 +60,6 @@ export function unitsOnBoard(state, owner = null) {
     if (owner && unit.owner !== owner) return [];
     return [{ key, unit }];
   });
-}
-
-// ── Empty-Board HQ Strike ────────────────────────────────────────────────────
-// GDD Locked Decision (2026-08-13): if the opponent has zero LIVE units on the board and
-// it isn't Turn 1 (the game's literal first half-turn — P2's own first turn, turn 2, IS
-// eligible), a friendly unit that hasn't yet used all its attacks this turn strikes the HQ
-// directly instead of an adjacent/Bombard enemy, since there's nothing to hit. Prevents a
-// player from stalling out all combat pressure by simply refusing to place any units.
-
-// True when attackerKey's owner has a live target-less opponent to strike directly.
-export function canStrikeHQDirectly(state, attackerKey) {
-  const attacker = state.board[attackerKey];
-  if (!attacker || state.turn === 1) return false;
-  const opp = attacker.owner === 'p1' ? 'p2' : 'p1';
-  return unitsOnBoard(state, opp).length === 0;
-}
-
-// hits is caller-supplied rather than re-derived from the Double Attack keyword here, so a
-// unit completing its second attack mid-combat (see game.js's TARGETING handler — a Double
-// Attack unit whose first hit just emptied the board) can request exactly the 1 hit it has
-// left instead of a formula recomputing "Double Attack -> 2" and double-granting.
-// Returns the same shape as resolveSingleAttack so callers can apply either result through
-// the same code path — boardMutations is always empty (no unit is hit), so the existing
-// wasDestroyed/kill-tracking checks downstream correctly no-op for a direct HQ strike.
-export function resolveEmptyBoardStrike(state, attackerKey, hits) {
-  const attacker = state.board[attackerKey];
-  const card = CARD_BY_ID[attacker.cardId];
-  const opp = attacker.owner === 'p1' ? 'p2' : 'p1';
-  return {
-    boardMutations: [],
-    hqDamageToP1: opp === 'p1' ? hits : 0,
-    hqDamageToP2: opp === 'p2' ? hits : 0,
-    logEntries: [`${card.name} strikes ${opp.toUpperCase()}'s HQ directly — ${hits} HQ damage (no enemy units on board)`],
-  };
 }
 
 // ── Direct HQ (doc 01 §19, doc 02 Q104-Q106) ────────────────────────────────
@@ -197,13 +163,16 @@ export function checkHeroPassivesOnPlace(s, active, col, key, card) {
     log.push(`${CARD_BY_ID[heroId].name}: ${card.name} +${amount} all sides (until your next turn) — ${reason}`);
   };
 
-  if (inHeroScope(ps, 'H04', col) && !triggered['H04']) { // Objective Marshal — adjacent to an Objective
+  // Objective Marshal — board-wide, no Column restriction (2026-09 balance pass: was
+  // Column-scoped via inHeroScope, matching H08 below; now fires regardless of which column the
+  // Unit was placed in, same "board-wide, first-Unit-this-turn" shape H21 already uses).
+  if ((ps.heroZones ?? []).includes('H04') && !triggered['H04']) {
     const [row, colNum] = tileCoords(key);
     const onOrAdjacent = s.objectives[key] || adjacentTiles(row, colNum).some(({ key: k }) => s.objectives[k]);
     if (onOrAdjacent) fire('H04', 1, 'adjacent to Objective');
   }
   if (inHeroScope(ps, 'H08', col) && !triggered['H08'] && card.cls === 'Infantry') { // Infantry Commander
-    fire('H08', 2, 'first Infantry this turn');
+    fire('H08', 1, 'first Infantry this turn'); // 2026-09 balance pass: was 2
   }
   if ((ps.heroZones ?? []).includes('H21') && !triggered['H21']) { // Emergency Logistics Officer
     const fueled = gainFuel(s[active], 1); // normal capped gain (respects Logistics Chief via fuelCapOf), not "this turn" temp Fuel
@@ -238,6 +207,30 @@ export function checkCounteroffensiveGeneral(s, key) {
     [owner]: { ...ps, heroTriggeredThisTurn: { ...ps.heroTriggeredThisTurn, H06: true } },
   };
   return { state, log: [`${CARD_BY_ID['H06'].name}: ${card?.name ?? 'unit'} +1 all sides (until your next turn) — first Suppression this turn`] };
+}
+
+// Ordered game-event funnel. Rules that make a Unit become Suppressed emit this event instead
+// of remembering H06 individually. New suppression sources therefore inherit the same passive
+// behavior automatically once they route their transition through applyGameEvents.
+export const GAME_EVENT = Object.freeze({
+  UNIT_SUPPRESSED: 'UNIT_SUPPRESSED',
+});
+
+export function unitSuppressedEvent(unitKey, beforeUnit, afterUnit) {
+  if (!beforeUnit || beforeUnit.state === 'suppressed' || afterUnit?.state !== 'suppressed') return null;
+  return { type: GAME_EVENT.UNIT_SUPPRESSED, unitKey };
+}
+
+export function applyGameEvents(s, events = []) {
+  let state = s;
+  const log = [];
+  for (const event of events.filter(Boolean)) {
+    if (event.type !== GAME_EVENT.UNIT_SUPPRESSED) continue;
+    const result = checkCounteroffensiveGeneral(state, event.unitKey);
+    state = result.state;
+    log.push(...result.log);
+  }
+  return { state, log };
 }
 
 // Single funnel for "remove Suppression from this tile" so every command/Hero power that
@@ -363,7 +356,7 @@ export function checkRally(s, attackerKey) {
       if (others.length) {
         const pick = others[Math.floor(Math.random() * others.length)];
         const u = s.board[pick.key];
-        s = { ...s, board: { ...s.board, [pick.key]: { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 } } };
+        s = { ...s, board: { ...s.board, [pick.key]: { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 } } };
         log.push(`${tag} ${CARD_BY_ID[u.cardId].name} +1 all sides (permanent)`);
         causalityTargets.push(pick.key);
       }
@@ -373,7 +366,7 @@ export function checkRally(s, attackerKey) {
       const others = unitsOnBoard(s, owner).filter(({ key, unit: u }) => key !== attackerKey && CARD_BY_ID[u.cardId]?.cls === 'Infantry');
       for (const { key: k } of others) {
         const u = s.board[k];
-        s = { ...s, board: { ...s.board, [k]: { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 } } };
+        s = { ...s, board: { ...s.board, [k]: { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 } } };
         causalityTargets.push(k);
       }
       if (others.length) log.push(`${tag} all other friendly Infantry +1 all sides (permanent)`);
@@ -385,7 +378,7 @@ export function checkRally(s, attackerKey) {
       for (const { key: adjKey } of adjacentTiles(row, col)) {
         const u = s.board[adjKey];
         if (!u || u.state === 'destroyed' || u.owner !== owner) continue;
-        s = { ...s, board: { ...s.board, [adjKey]: { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 } } };
+        s = { ...s, board: { ...s.board, [adjKey]: { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 } } };
         any = true;
         causalityTargets.push(adjKey);
       }
@@ -401,7 +394,7 @@ export function checkRally(s, attackerKey) {
 // ── Shared destruction chain (doc 01 §9) ────────────────────────────────────
 // Single funnel for EVERY destruction source (normal combat kills, self-destroy Commands,
 // Overrun-modified events) so Last Stand / Breakthrough / HQ-damage-replacement can never
-// diverge between call sites. Chain: mark destroyed -> remove from board -> recalc dynamic
+// diverge between call sites. Chain: snapshot dying Unit -> remove from board -> recalc dynamic
 // state -> apply normal-or-replacement HQ damage -> recalc -> resolve destroyed Unit's Last
 // Stand -> recalc -> resolve Breakthrough (if sourceUnitKey is still alive) -> recalc.
 //
@@ -422,9 +415,9 @@ export function resolveDestructionChain(s, { unitKey, sourceUnitKey = null, caus
   const log = [];
   let hqDamageToP1 = 0, hqDamageToP2 = 0;
 
-  // 1-2. Mark destroyed, remove from board. Destroyed Units go to their owner's Discard Pile
+  // 1-2. Snapshot taken above, now remove from board. Destroyed Units go to their owner's Discard Pile
   // (doc 02 Q026) — bookkeeping only, no current card reads this zone (doc 02 Q028).
-  s = { ...s, board: { ...s.board, [unitKey]: { ...dyingUnit, state: 'destroyed' } } };
+  s = { ...s, board: { ...s.board, [unitKey]: null } };
   s = { ...s, [owner]: { ...s[owner], discardPile: [...(s[owner].discardPile ?? []), dyingUnit.cardId] } };
   s = recalculateDynamicStats(s);
 
@@ -530,7 +523,7 @@ function runLastStandEffect(s, key, dyingUnit, card, owner, excludeKeys) {
       if (!list.length) { log.push(`${tag} no friendly Infantry to target`); return { state: s, log, causalityTargets: [] }; }
       const pick = list[Math.floor(Math.random() * list.length)];
       const u = s.board[pick.key];
-      s = { ...s, board: { ...s.board, [pick.key]: { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 } } };
+      s = { ...s, board: { ...s.board, [pick.key]: { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 } } };
       log.push(`${tag} ${CARD_BY_ID[u.cardId].name} +1 all sides (permanent)`);
       return { state: s, log, targetKey: pick.key, causalityTargets: [pick.key] };
     }
@@ -556,7 +549,7 @@ function runBreakthroughEffect(s, key, unit, card) {
   const tag = `${card.name} (Breakthrough):`;
   switch (card.id) {
     case 'T32': case 'T38': // Tank Hunter / Armored Spearhead — this Unit +1 all sides permanently
-      s = { ...s, board: { ...s.board, [key]: { ...unit, grantedSideBonus: (unit.grantedSideBonus || 0) + 1, sideBonusTurns: 99 } } };
+      s = { ...s, board: { ...s.board, [key]: { ...unit, permanentSideBonus: (unit.permanentSideBonus || 0) + 1 } } };
       log.push(`${tag} +1 all sides (permanent)`);
       return { state: s, log, causalityTargets: [key] };
     case 'T33': { // Tank Destroyer — your next Tank costs 1 Fuel (set-cost; see discountFor's
@@ -725,20 +718,51 @@ export function resolveCraftDrawback(s, ownerRole, unitKey, drawback) {
     const list = unitsOnBoard(s, ownerRole).filter(({ unit }) => unit.state === 'normal');
     if (list.length) {
       const pick = list[Math.floor(Math.random() * list.length)];
-      s = { ...s, board: { ...s.board, [pick.key]: { ...pick.unit, state: 'suppressed' } } };
+      const suppressed = { ...pick.unit, state: 'suppressed' };
+      s = { ...s, board: { ...s.board, [pick.key]: suppressed } };
       log.push(`Craft drawback: ${CARD_BY_ID[pick.unit.cardId]?.name ?? 'a friendly Unit'} suppressed`);
+      const triggered = applyGameEvents(s, [unitSuppressedEvent(pick.key, pick.unit, suppressed)]);
+      s = triggered.state;
+      log.push(...triggered.log);
     }
   }
   return { state: recalculateDynamicStats(s), log };
 }
 
-// H25's activation-cost progression: 5 -> 4 -> 3 -> 2 -> 1 -> 1... (min 1), never resets
-// except via a full match restart. Stored on PlayerState as `nextCraftCost` (starts at 5).
+// H25's activation-cost progression: 4 -> 3 -> 2 -> 1 -> 1... (min 1), never resets except via a
+// full match restart. Stored on PlayerState as `nextCraftCost` (starts at 4 — 2026-09 balance
+// pass reduced the starting cost from 5; the floor and per-activation -1 step are unchanged).
 export function nextCraftCost(playerState) {
-  return playerState.nextCraftCost ?? 5;
+  return playerState.nextCraftCost ?? 4;
 }
 export function advanceCraftCost(playerState) {
   return { ...playerState, nextCraftCost: Math.max(1, nextCraftCost(playerState) - 1) };
+}
+
+// ── Quartermaster General (H01) — 2026-09 balance pass ──────────────────────
+// Replaces the old "draw 1 card" with "look at 3 random cards from your deck, choose 1 to put
+// into your hand; the others remain in the deck." Split into two pure steps so the UI layer
+// (game.js) can show the sample in a private picker and only resolve the pick once the player
+// actually chooses — no gameplay state changes until then.
+
+// Samples up to `count` DISTINCT random cards from the deck BY INDEX, not by id — two of the
+// three samples can be the same printed card (e.g. two remaining copies of Rifle Squad), so an
+// id alone can't tell them apart when it's time to remove exactly the one that was picked.
+// Gracefully returns fewer than `count` entries for a deck with fewer cards than that (down to
+// 0 for an empty deck) — the caller decides whether an empty result blocks activation.
+export function sampleRandomFromDeck(deck, count) {
+  const indices = shuffle(deck.map((_, i) => i)).slice(0, Math.min(count, deck.length));
+  return indices.map(index => ({ index, cardId: deck[index] }));
+}
+
+// Resolves the player's choice: the card at `pickedIndex` leaves the deck and goes to hand (or
+// Discard Pile if the hand is already full — doc 02 Q024, same rule Craft/Training Officer use).
+// Every other card — including the sampled-but-not-chosen ones — stays in its original deck
+// position; only the one slot is removed, the rest of the array order is untouched.
+export function resolveQuartermasterPick(playerState, pickedIndex) {
+  const cardId = playerState.deck[pickedIndex];
+  const deck = playerState.deck.filter((_, i) => i !== pickedIndex);
+  return { ...addCardToHand(playerState, cardId), deck };
 }
 
 // ── Hand-instance stat buff (Training Officer, H19) ─────────────────────────
@@ -911,18 +935,21 @@ function resolveSecondaryHits(state, keys, attackerOwner) {
   const boardMutations = [];
   let hqDamageToP1 = 0, hqDamageToP2 = 0;
   const logEntries = [];
+  const events = [];
   for (const key of fixedScanOrder(keys)) {
     const tile = state.board[key];
     if (!tile || tile.owner === attackerOwner || tile.state === 'destroyed') continue;
     const { newUnit, hqDamage } = applyHit(tile);
     const finalUnit = newUnit.state === 'destroyed' ? null : newUnit;
     boardMutations.push({ key, newUnit: finalUnit });
+    const suppression = unitSuppressedEvent(key, tile, finalUnit);
+    if (suppression) events.push(suppression);
     if (tile.owner === 'p1') hqDamageToP1 += hqDamage; else hqDamageToP2 += hqDamage;
     const name = CARD_BY_ID[tile.cardId]?.name ?? '?';
     const label = finalUnit === null ? 'Destroyed' : newUnit.state === 'suppressed' ? 'Suppressed' : 'armor absorbed';
     logEntries.push(`  (secondary) -> ${name}: ${label}`);
   }
-  return { boardMutations, hqDamageToP1, hqDamageToP2, logEntries };
+  return { boardMutations, hqDamageToP1, hqDamageToP2, logEntries, events };
 }
 
 // ── resolveSingleAttack ───────────────────────────────────────────────────────
@@ -940,11 +967,12 @@ function resolveSecondaryHits(state, keys, attackerOwner) {
 //   hqDamageToP1:  HQ damage dealt TO P1's HQ this attack.
 //   hqDamageToP2:  HQ damage dealt TO P2's HQ this attack.
 //   logEntries:    human-readable strings for the game log.
+//   events:        ordered state transitions for passive/event hooks.
 export function resolveSingleAttack(state, attackerKey, targetKey) {
   const attacker = state.board[attackerKey];
   const defender = state.board[targetKey];
 
-  const empty = { boardMutations: [], hqDamageToP1: 0, hqDamageToP2: 0, logEntries: [] };
+  const empty = { boardMutations: [], hqDamageToP1: 0, hqDamageToP2: 0, logEntries: [], events: [] };
 
   if (!attacker || !defender) return empty;
 
@@ -977,6 +1005,7 @@ export function resolveSingleAttack(state, attackerKey, targetKey) {
       boardMutations: [],
       hqDamageToP1: 0,
       hqDamageToP2: 0,
+      events: [],
       logEntries: [
         `${attackerName} attacked ${defenderName} — failed (${attackerSide} vs ${defenderSide})`
       ],
@@ -989,6 +1018,9 @@ export function resolveSingleAttack(state, attackerKey, targetKey) {
   const finalUnit = hitUnit.state === "destroyed" ? null : hitUnit;
 
   const boardMutations = [{ key: targetKey, newUnit: finalUnit }];
+  const events = [];
+  const primarySuppression = unitSuppressedEvent(targetKey, defender, finalUnit);
+  if (primarySuppression) events.push(primarySuppression);
 
   let hqDamageToP1 = 0;
   let hqDamageToP2 = 0;
@@ -1020,7 +1052,8 @@ export function resolveSingleAttack(state, attackerKey, targetKey) {
     hqDamageToP1 += secondary.hqDamageToP1;
     hqDamageToP2 += secondary.hqDamageToP2;
     logEntries.push(...secondary.logEntries);
+    events.push(...secondary.events);
   }
 
-  return { boardMutations, hqDamageToP1, hqDamageToP2, logEntries };
+  return { boardMutations, hqDamageToP1, hqDamageToP2, logEntries, events };
 }

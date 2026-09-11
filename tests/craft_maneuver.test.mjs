@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getManeuverTargets, resolveManeuver, generateCraftCandidates, craftCandidateToCard, resolveCraftDrawback, nextCraftCost, advanceCraftCost, applyHandBuff } from '../js/combat.js';
-import { CARD_BY_ID, ensureGeneratedCard } from '../js/cards.js';
+import { CARD_BY_ID, ensureGeneratedCard } from '../js/cards.js?v=2026090402';
 
 function boardWith(entries) {
   const board = {};
@@ -42,6 +42,22 @@ test('resolveManeuver moves the unit and preserves its state', () => {
   assert.equal(after.board['3,3'].cardId, 'I1');
   assert.equal(after.board['3,3'].rotation, 90, 'orientation preserved');
   assert.equal(after.board['3,3'].persistentSpent, 1, 'attack-used state preserved');
+});
+
+// Suppression alone must not disqualify a Unit from being Maneuvered (no card text among
+// A55/A56/A61-A63/A65, H16, C21/C27/C35, or Airfield L2 requires an unsuppressed/active Unit),
+// and Maneuver must not incidentally clear it either.
+test('getManeuverTargets does not exclude a Suppressed source Unit from computing destinations', () => {
+  const state = { mapId: 'kursk', board: boardWith({ '0,0': unit('p1', 'I1', { state: 'suppressed' }) }), objectives: {} };
+  const targets = getManeuverTargets(state, '0,0');
+  assert.ok(targets.length > 0, 'a Suppressed Unit still has legal Maneuver destinations');
+});
+
+test('resolveManeuver leaves a Suppressed Unit Suppressed after moving', () => {
+  const state = { mapId: 'kursk', board: boardWith({ '0,0': unit('p1', 'I1', { state: 'suppressed' }) }), objectives: {} };
+  const { state: after } = resolveManeuver(state, '0,0', '3,3');
+  assert.equal(after.board['0,0'], null);
+  assert.equal(after.board['3,3'].state, 'suppressed', 'Maneuver does not clear Suppressed — moving is not a reset');
 });
 
 test('generateCraftCandidates returns exactly 3 candidates, each with a valid keyword and drawback', () => {
@@ -89,12 +105,6 @@ test('a zero-value side actually occurs across many random27 rolls', () => {
 });
 
 test('craftCandidateToCard produces a real Aircraft card definition, not in the static pool', () => {
-  // Doesn't cross-check the module-level CARD_BY_ID registry here — this test file imports
-  // cards.js via a different specifier (no cache-busting query string) than combat.js's
-  // internal import, so Node's ESM loader treats them as separate module instances with
-  // separate CARD_BY_ID objects; that's a test-harness artifact of the versioned-import
-  // convention, not a real bug (every real file consistently uses the same ?v= suffix).
-  // What actually matters for gameplay — the returned card's shape — is checked directly.
   const candidate = { stats: { n: 6, e: 6, s: 6, w: 6 }, keyword: 'Armor', drawback: 'ownHqDamage' };
   const card = craftCandidateToCard(candidate, 'p1');
   assert.ok(card.id.startsWith('Craft-p1-'), `id should be namespaced by role, got: ${card.id}`);
@@ -102,6 +112,7 @@ test('craftCandidateToCard produces a real Aircraft card definition, not in the 
   assert.equal(card.cost, 1);
   assert.equal(card.generated, true);
   assert.equal(card.craftDrawback, 'ownHqDamage');
+  assert.equal(CARD_BY_ID[card.id], card, 'generated card must be visible through the shared card registry');
 });
 
 test('resolveCraftDrawback: ownHqDamage deals exactly 3 to the owner\'s HQ', () => {
@@ -177,12 +188,13 @@ test('ensureGeneratedCard is idempotent — does not overwrite an already-regist
   assert.equal(CARD_BY_ID['Craft-test-2'].name, 'First', 're-registering the same id must not clobber the existing definition');
 });
 
-test('nextCraftCost/advanceCraftCost: 5 -> 4 -> 3 -> 2 -> 1 -> 1 progression, floor 1', () => {
+test('nextCraftCost/advanceCraftCost: 4 -> 3 -> 2 -> 1 -> 1 -> 1 progression, floor 1', () => {
+  // 2026-09 balance pass: starting cost reduced from 5 to 4 (floor and -1 step unchanged).
   let ps = {};
   const seen = [];
   for (let i = 0; i < 6; i++) {
     seen.push(nextCraftCost(ps));
     ps = advanceCraftCost(ps);
   }
-  assert.deepEqual(seen, [5, 4, 3, 2, 1, 1]);
+  assert.deepEqual(seen, [4, 3, 2, 1, 1, 1]);
 });

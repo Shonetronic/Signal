@@ -27,6 +27,32 @@ test('getSideValue: no maximum cap — a large positive modifier passes through 
   assert.equal(getSideValue(u, 'n'), CARD_BY_ID['I1'].n + 50);
 });
 
+test('permanent and timed side bonuses coexist; only the timed bonus expires', () => {
+  const boosted = unit('p1', 'I1', {
+    permanentSideBonus: 2,
+    grantedSideBonus: 3,
+    sideBonusTurns: 1,
+  });
+  const state = baseState(boardWith({ '0,0': boosted }), {
+    initiative: 'p1',
+    p1: {
+      hq: 30,
+      hand: [],
+      fuel: 0,
+      fuelCap: 9,
+      pendingFuelGain: 0,
+      heroesActivatedThisTurn: [],
+      heroZones: [null, null, null, null],
+    },
+  });
+
+  assert.equal(getSideValue(boosted, 'n'), CARD_BY_ID['I1'].n + 5);
+  const refreshed = startOfTurn(state);
+  assert.equal(refreshed.board['0,0'].grantedSideBonus, 0);
+  assert.equal(refreshed.board['0,0'].permanentSideBonus, 2);
+  assert.equal(getSideValue(refreshed.board['0,0'], 'n'), CARD_BY_ID['I1'].n + 2);
+});
+
 // ── discountFor: 'unit' appliesTo (Run 2, Factory O1 L2/L4) ─────────────────
 // Added because addDiscount's only prior generic dimension was 'command' (special-cased) or
 // an exact card.cls match — nothing meant "any Unit, any class, but not a Command." Factory's
@@ -125,6 +151,56 @@ test('resolveSingleAttack: Blast secondary Hit destroying a Guard Unit deals 0 H
   assert.equal(result.hqDamageToP2, 2, 'only the non-Guard primary kill (2) contributes HQ damage — the Guard secondary kill contributes 0');
 });
 
+// Regression coverage for a reported bug ("units killed by Blast/Barrage secondary hits
+// disappear but their owner's HQ isn't deducted"). Live 2-client reproduction (P1 attacking
+// with AR46 Blast into 3 suppressed defenders, one Guard) confirmed the full game.js ->
+// combat.js -> Firebase integration layer already applies this correctly and identically on
+// both clients — these tests lock in the pure-function layer already backing that, including
+// the two scenarios the live repro didn't directly cover: the reverse attacker/defender
+// ownership direction, and a secondary hit that only Suppresses (no HQ damage at all).
+
+test('resolveSingleAttack: HQ damage is owner-based, not role-hardcoded — P2 attacking deals damage to P1', () => {
+  const state = baseState(boardWith({
+    '1,1': unit('p2', 'AR48', { tempSideBonus: 20 }), // Barrage, P2 is the attacker this time
+    '1,2': unit('p1', 'I1', { state: 'suppressed' }),  // primary, one hit from destroyed
+    '1,3': unit('p1', 'I1', { state: 'suppressed' }),  // Barrage secondary, further along the ray
+  }));
+  const result = resolveSingleAttack(state, '1,1', '1,2');
+  assert.ok(result.boardMutations.some(m => m.key === '1,2' && m.newUnit === null), 'primary destroyed');
+  assert.ok(result.boardMutations.some(m => m.key === '1,3' && m.newUnit === null), 'Barrage secondary destroyed');
+  assert.equal(result.hqDamageToP1, 4, 'both non-Guard kills (2+2) deducted from the DEFENDING side (P1), not the attacker (P2)');
+  assert.equal(result.hqDamageToP2, 0, 'the attacking side takes no HQ damage from its own attack');
+});
+
+test('resolveSingleAttack: Barrage primary destroyed + one Guard secondary destroyed + one non-Guard secondary destroyed sums correctly (matches live 2-client repro)', () => {
+  // AR48's strong side is West; place the attacker at the east edge attacking west so the ray
+  // has room: 1,3 (attacker) -> 1,2 (primary) -> 1,1 (secondary) -> 1,0 (secondary).
+  const state = baseState(boardWith({
+    '1,3': unit('p1', 'AR48', { tempSideBonus: 20 }),
+    '1,2': unit('p2', 'I1', { state: 'suppressed' }),  // primary, non-Guard
+    '1,1': unit('p2', 'I6', { state: 'suppressed' }),  // secondary, Guard
+    '1,0': unit('p2', 'I1', { state: 'suppressed' }),  // secondary, non-Guard
+  }));
+  const result = resolveSingleAttack(state, '1,3', '1,2');
+  const destroyedKeys = result.boardMutations.filter(m => m.newUnit === null).map(m => m.key).sort();
+  assert.deepEqual(destroyedKeys, ['1,0', '1,1', '1,2'], 'primary and both Barrage secondaries all destroyed');
+  assert.equal(result.hqDamageToP2, 4, 'primary (2) + Guard secondary (0) + non-Guard secondary (2) = 4, exactly matching the live 2-client repro (29 -> 25 HQ)');
+});
+
+test('resolveSingleAttack: a secondary hit that only Suppresses (not yet Destroyed) contributes 0 HQ damage', () => {
+  const state = baseState(boardWith({
+    '1,1': unit('p1', 'AR46', { tempSideBonus: 20 }), // Blast
+    '2,1': unit('p2', 'I1', { state: 'suppressed' }),  // primary, one hit from destroyed
+    '2,0': unit('p2', 'I1', { state: 'normal' }),       // secondary, still normal — this hit only Suppresses it
+  }));
+  const result = resolveSingleAttack(state, '1,1', '2,1');
+  const primaryDestroyed = result.boardMutations.some(m => m.key === '2,1' && m.newUnit === null);
+  const secondarySuppressedNotDestroyed = result.boardMutations.some(m => m.key === '2,0' && m.newUnit?.state === 'suppressed');
+  assert.ok(primaryDestroyed, 'primary destroyed (contributes 2)');
+  assert.ok(secondarySuppressedNotDestroyed, 'secondary only Suppressed, still on the board');
+  assert.equal(result.hqDamageToP2, 2, 'only the destroy (2) counts — Suppression alone never deals HQ damage');
+});
+
 // ── Section 5: Blast / Barrage ───────────────────────────────────────────────
 
 test('Blast: a successful Hit also Hits enemies directly left/right of the target (perpendicular)', () => {
@@ -187,24 +263,24 @@ test('Rally (I12 Assault Trooper): draws 1 card on attack declaration', () => {
 test('Rally (I13 Combat Engager): a random OTHER friendly Infantry gets +1 permanently, never itself', () => {
   const state = baseState(boardWith({ '0,0': unit('p1', 'I13'), '0,1': unit('p1', 'I1') }));
   const { state: after } = checkRally(state, '0,0');
-  assert.equal(after.board['0,0'].grantedSideBonus ?? 0, 0, 'the Rally source itself is never a valid target');
-  assert.equal(after.board['0,1'].grantedSideBonus, 1);
+  assert.equal(after.board['0,0'].permanentSideBonus ?? 0, 0, 'the Rally source itself is never a valid target');
+  assert.equal(after.board['0,1'].permanentSideBonus, 1);
 });
 
 test('Rally (I14 Veteran Raider): ALL adjacent friendly Units get +1 permanently (not just Infantry)', () => {
   const state = baseState(boardWith({ '1,1': unit('p1', 'I14'), '0,1': unit('p1', 'T23'), '1,0': unit('p1', 'I1'), '1,2': unit('p2', 'I2') }));
   const { state: after } = checkRally(state, '1,1');
-  assert.equal(after.board['0,1'].grantedSideBonus, 1, 'adjacent friendly Tank also qualifies — not Infantry-only');
-  assert.equal(after.board['1,0'].grantedSideBonus, 1);
-  assert.equal(after.board['1,2'].grantedSideBonus ?? 0, 0, 'enemy adjacent Unit must not be buffed');
+  assert.equal(after.board['0,1'].permanentSideBonus, 1, 'adjacent friendly Tank also qualifies — not Infantry-only');
+  assert.equal(after.board['1,0'].permanentSideBonus, 1);
+  assert.equal(after.board['1,2'].permanentSideBonus ?? 0, 0, 'enemy adjacent Unit must not be buffed');
 });
 
 test('Rally (I21 Commanding Infantry): ALL other friendly Infantry get +1 permanently', () => {
   const state = baseState(boardWith({ '0,0': unit('p1', 'I21'), '0,1': unit('p1', 'I1'), '3,3': unit('p1', 'I2'), '1,1': unit('p1', 'T23') }));
   const { state: after } = checkRally(state, '0,0');
-  assert.equal(after.board['0,1'].grantedSideBonus, 1);
-  assert.equal(after.board['3,3'].grantedSideBonus, 1, 'not adjacency-limited, board-wide');
-  assert.equal(after.board['1,1'].grantedSideBonus ?? 0, 0, 'Tank does not qualify — Infantry only for I21');
+  assert.equal(after.board['0,1'].permanentSideBonus, 1);
+  assert.equal(after.board['3,3'].permanentSideBonus, 1, 'not adjacency-limited, board-wide');
+  assert.equal(after.board['1,1'].permanentSideBonus ?? 0, 0, 'Tank does not qualify — Infantry only for I21');
 });
 
 test('Rally triggers on attack declaration even without the Rally keyword actually being present -> no-op safely', () => {
@@ -252,14 +328,14 @@ test('Last Stand (I18 Last Stand Soldier): draws 1 card when destroyed', () => {
 test('Last Stand (I19 Final Defender): a random friendly Infantry (excluding the dying Unit itself) gets +1 permanently', () => {
   const state = baseState(boardWith({ '0,0': unit('p1', 'I19'), '0,1': unit('p1', 'I1') }));
   const { state: after } = resolveDestructionChain(state, { unitKey: '0,0' });
-  assert.equal(after.board['0,1'].grantedSideBonus, 1);
+  assert.equal(after.board['0,1'].permanentSideBonus, 1);
 });
 
 test('Last Stand (I22 Field Commander): adjacent friendly Infantry get +1 until end of turn (tempSideBonus, not permanent)', () => {
   const state = baseState(boardWith({ '1,1': unit('p1', 'I22'), '0,1': unit('p1', 'I1') }));
   const { state: after } = resolveDestructionChain(state, { unitKey: '1,1' });
   assert.equal(after.board['0,1'].tempSideBonus, 1);
-  assert.equal(after.board['0,1'].grantedSideBonus ?? 0, 0, 'this one is temporary, not permanent');
+  assert.equal(after.board['0,1'].permanentSideBonus ?? 0, 0, 'this one is temporary, not permanent');
 });
 
 test('Graves Registration Officer (H14) doubles Last Stand as two independent resolutions, never the same random target twice', () => {
@@ -268,14 +344,14 @@ test('Graves Registration Officer (H14) doubles Last Stand as two independent re
     { p1: { hq: 30, hand: [], heroZones: ['H14', null, null, null] } }
   );
   const { state: after } = resolveDestructionChain(state, { unitKey: '0,0' });
-  assert.equal(after.board['0,1'].grantedSideBonus, 1);
-  assert.equal(after.board['0,2'].grantedSideBonus, 1, 'both eligible Infantry got hit — doubling could not pick the same one twice');
+  assert.equal(after.board['0,1'].permanentSideBonus, 1);
+  assert.equal(after.board['0,2'].permanentSideBonus, 1, 'both eligible Infantry got hit — doubling could not pick the same one twice');
 });
 
 test('Breakthrough (T32 Tank Hunter): the surviving attacker gains +1 all sides permanently on a kill', () => {
   const state = baseState(boardWith({ '0,0': unit('p1', 'T32'), '0,1': unit('p2', 'I1') }));
   const { state: after } = resolveDestructionChain(state, { unitKey: '0,1', sourceUnitKey: '0,0' });
-  assert.equal(after.board['0,0'].grantedSideBonus, 1);
+  assert.equal(after.board['0,0'].permanentSideBonus, 1);
 });
 
 test('Breakthrough (T33 Tank Destroyer): sets a Tank set-cost discount that other reductions can still stack through', () => {
@@ -314,10 +390,12 @@ test('Breakthrough does not trigger if the source Unit did not survive the excha
 
 test('resolveDestructionChain with no replacement: destroying a Guard Unit deals 0 HQ damage to its owner (Sacrifice Play C18)', () => {
   const state = baseState(boardWith({ '0,0': unit('p1', 'I6') })); // I6 Shield Bearers, Guard
-  const { hqDamageToP1, hqDamageToP2, log } = resolveDestructionChain(state, { unitKey: '0,0', sourceUnitKey: null, cause: 'command' });
+  const { state: after, hqDamageToP1, hqDamageToP2, log } = resolveDestructionChain(state, { unitKey: '0,0', sourceUnitKey: null, cause: 'command' });
   assert.equal(hqDamageToP1, 0, 'Guard reduces normal self-destruction HQ damage to 0');
   assert.equal(hqDamageToP2, 0);
   assert.ok(log.some(l => /0 HQ damage/.test(l)));
+  assert.equal(after.board['0,0'], null, 'the sacrificed Unit must leave its tile, not remain as a dead card');
+  assert.deepEqual(after.p1.discardPile, ['I6']);
 });
 
 test('resolveDestructionChain with no replacement: destroying a non-Guard Unit deals the normal 2 HQ damage to its owner', () => {
@@ -328,9 +406,10 @@ test('resolveDestructionChain with no replacement: destroying a non-Guard Unit d
 
 test('resolveDestructionChain with hqResultReplacement bypasses Guard entirely (Scorched Earth Raid C19)', () => {
   const state = baseState(boardWith({ '0,0': unit('p1', 'I6') })); // Guard
-  const { hqDamageToP1, hqDamageToP2 } = resolveDestructionChain(state, { unitKey: '0,0', sourceUnitKey: null, cause: 'command', hqResultReplacement: { targetHq: 'p2', amount: 2 } });
+  const { state: after, hqDamageToP1, hqDamageToP2 } = resolveDestructionChain(state, { unitKey: '0,0', sourceUnitKey: null, cause: 'command', hqResultReplacement: { targetHq: 'p2', amount: 2 } });
   assert.equal(hqDamageToP1, 0, 'the owner takes no self-damage when a replacement is in effect');
   assert.equal(hqDamageToP2, 2, 'the replacement amount lands on the opponent regardless of Guard');
+  assert.equal(after.board['0,0'], null, 'the destroyed Unit must leave its tile, not remain as a dead card');
 });
 
 // Section 12 high-risk combo: "Scorched Earth Raid + Guard Last Stand Unit" — I22 Field
@@ -341,6 +420,7 @@ test('Scorched Earth Raid on a Guard + Last Stand Unit: HQ replacement bypasses 
   const { hqDamageToP1, hqDamageToP2, state: after } = resolveDestructionChain(state, { unitKey: '0,0', sourceUnitKey: null, cause: 'command', hqResultReplacement: { targetHq: 'p2', amount: 2 } });
   assert.equal(hqDamageToP1, 0);
   assert.equal(hqDamageToP2, 2, 'Guard does not block the replacement');
+  assert.equal(after.board['0,0'], null, 'Last Stand resolves from the snapshot after its Unit leaves the board');
   assert.equal(after.board['0,1'].tempSideBonus, 1, "Field Commander's Last Stand (adjacent Infantry +1) still fires despite Guard/replacement");
 });
 

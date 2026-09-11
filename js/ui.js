@@ -1,7 +1,7 @@
-import { CARD_BY_ID } from './cards.js?v=1788366121';
-import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir } from './state.js?v=1788366121';
-import { getTerrain } from './maps.js?v=1788366121';
-import { nextCraftCost } from './combat.js?v=1788366121';
+import { CARD_BY_ID } from './cards.js?v=1789117665';
+import { getKeywords, maxArmorHits, discountFor, fuelCapOf, rotatedDir, applyHit, remainingAttacks } from './state.js?v=1789117665';
+import { getTerrain } from './maps.js?v=1789117665';
+import { evaluateDirectHQ, getAttackableTargets, nextCraftCost } from './combat.js?v=1789117665';
 
 const TERRAIN_SHORT = { plains: 'P', forest: 'F', water: 'W', desert: 'D', city: 'C' };
 
@@ -31,6 +31,139 @@ const KEYWORD_TEXT = {
   'Craft': 'Generates aircraft candidates to choose from — activation cost drops with each use.',
 };
 
+// Pure attack-preview wording built from the same applyHit result combat uses. Keeping this out
+// of game.js prevents the inspector from drifting when damage rules change (as happened when
+// Suppression moved from 1 HQ damage to 0 and Guard began preventing destruction damage).
+export function describeAttackOutcome(defender, hits, { overrun = false } = {}) {
+  if (!hits) {
+    return { badge: 'BLOCKED', outcome: 'Attack blocked — no effect', hqDamage: 0 };
+  }
+
+  const beforeState = defender.state;
+  const beforeArmorHits = defender.armorHits ?? 0;
+  const { newUnit, hqDamage: baseHqDamage } = applyHit(defender);
+  const armorAbsorbed = newUnit != null &&
+    newUnit.state === beforeState &&
+    (newUnit.armorHits ?? 0) > beforeArmorHits;
+  const destroyed = newUnit == null || newUnit.state === 'destroyed';
+
+  if (armorAbsorbed) {
+    return { badge: 'HIT', outcome: 'Armor absorbs the hit — no HQ damage', hqDamage: 0 };
+  }
+
+  // Overrun adds 1 to each newly-Suppressed or newly-Destroyed defender in the real attack
+  // handler. Include it here so the pre-click preview and the eventual HQ number always agree.
+  const overrunDamage = overrun && (destroyed || newUnit.state === 'suppressed') ? 1 : 0;
+  const totalHqDamage = baseHqDamage + overrunDamage;
+  const hqText = totalHqDamage === 0
+    ? 'no HQ damage'
+    : `${totalHqDamage} HQ damage to defender`;
+
+  if (newUnit?.state === 'suppressed') {
+    return { badge: 'HIT', outcome: `Suppressed — ${hqText}`, hqDamage: totalHqDamage };
+  }
+
+  if (destroyed) {
+    const guardProtected = getKeywords(defender).includes('Guard') && baseHqDamage === 0;
+    const guardText = guardProtected && overrunDamage === 0 ? 'Guard prevents HQ damage' : hqText;
+    return { badge: 'HIT', outcome: `Destroyed — ${guardText}`, hqDamage: totalHqDamage };
+  }
+
+  return { badge: 'HIT', outcome: `Hit — ${hqText}`, hqDamage: totalHqDamage };
+}
+
+// Pure turn-readiness projection for the active player. This deliberately asks the combat
+// engine which targets are legal and runs the same non-mutating Direct HQ evaluation used by
+// End Turn, rather than recreating Guard/Bombard/Precision/turn-1/lethal rules in presentation
+// code. The returned indicator map is consumed by renderBoard; the totals feed the End Turn
+// forecast. "availableAttackCount" means attacks the player can still choose to make against a
+// legal Unit right now — those attacks are forfeited, not converted, if the turn ends.
+export function summarizeTurnReadiness(state, activePlayer = state?.initiative) {
+  const targetPlayer = activePlayer === 'p1' ? 'p2' : 'p1';
+  const directResult = evaluateDirectHQ(state, activePlayer);
+  const totalDirectHqDamage = targetPlayer === 'p1'
+    ? directResult.hqDamageToP1
+    : directResult.hqDamageToP2;
+  const indicators = new Map();
+  const canAttack = [];
+
+  for (const [key, boardUnit] of Object.entries(state.board)) {
+    if (!boardUnit || boardUnit.owner !== activePlayer || boardUnit.state !== 'normal') continue;
+    const remaining = remainingAttacks(boardUnit);
+    if (remaining <= 0) continue;
+    const targetCount = getAttackableTargets(state, key).length;
+    if (targetCount <= 0) continue;
+    const item = { key, remaining, targetCount };
+    canAttack.push(item);
+    indicators.set(key, { kind: 'attack', count: remaining, targetCount });
+  }
+
+  // The simulated post-sweep board is the most exact source of per-Unit Direct HQ damage:
+  // subtracting remaining allowances before/after automatically reflects Double Attack,
+  // temporary attacks, and the engine's immediate lethal stop across multiple Units.
+  const directHq = directResult.sources.flatMap(({ key }) => {
+    const before = state.board[key];
+    const after = directResult.state.board[key];
+    const damage = before && after
+      ? Math.max(0, remainingAttacks(before) - remainingAttacks(after))
+      : 0;
+    if (damage <= 0) return [];
+    indicators.set(key, { kind: 'direct', count: damage, targetPlayer });
+    return [{ key, damage }];
+  });
+
+  const availableAttackCount = canAttack.reduce((sum, item) => sum + item.remaining, 0);
+  const targetHq = state[targetPlayer]?.hq ?? Infinity;
+  return {
+    activePlayer,
+    targetPlayer,
+    canAttack,
+    directHq,
+    availableAttackCount,
+    totalDirectHqDamage,
+    lethal: totalDirectHqDamage > 0 && totalDirectHqDamage >= targetHq,
+    indicators,
+  };
+}
+
+// Small DOM renderer kept beside summarizeTurnReadiness so the forecast's wording and visual
+// contract can be tested without loading game.js (which boots the full browser controller).
+export function renderEndTurnSummary(el, summary) {
+  if (!el) return;
+  el.replaceChildren();
+  el.className = 'end-turn-summary';
+
+  const directDamage = summary?.totalDirectHqDamage ?? 0;
+  const unusedAttacks = summary?.availableAttackCount ?? 0;
+  if (directDamage <= 0 && unusedAttacks <= 0) {
+    el.style.display = 'none';
+    return;
+  }
+
+  const label = document.createElement('div');
+  label.className = 'end-turn-summary-label';
+  label.textContent = 'ENDING NOW';
+  el.append(label);
+
+  if (directDamage > 0) {
+    const row = document.createElement('div');
+    row.className = `end-turn-summary-row direct${summary.lethal ? ' lethal' : ''}`;
+    row.textContent = summary.lethal
+      ? `LETHAL · ${directDamage} automatic damage to ${summary.targetPlayer.toUpperCase()} HQ`
+      : `HQ HIT · ${directDamage} automatic damage to ${summary.targetPlayer.toUpperCase()} HQ`;
+    el.append(row);
+  }
+
+  if (unusedAttacks > 0) {
+    const row = document.createElement('div');
+    row.className = 'end-turn-summary-row warning';
+    row.textContent = `⚔ ${unusedAttacks} usable attack${unusedAttacks === 1 ? '' : 's'} will be forfeited`;
+    el.append(row);
+  }
+
+  el.style.display = 'block';
+}
+
 // ── Board rendering ───────────────────────────────────────────────────────────
 
 // Render the 4x4 board from state into the #board element.
@@ -42,7 +175,7 @@ const KEYWORD_TEXT = {
 // recomputed per-viewer rotation. Stats shown on a placed card also never flip by owner
 // (see getSideValue in state.js) — a card's printed N/E/S/W always maps to physical
 // N/E/S/W, same as in hand.
-export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null, transitionFlags = null, terrainBlockedKeys = null, objectiveTransitionFlags = null) {
+export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys = null, transitionFlags = null, terrainBlockedKeys = null, objectiveTransitionFlags = null, actionIndicators = null) {
   const board = document.getElementById('board');
   board.innerHTML = '';
 
@@ -130,7 +263,10 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
       // Unit on tile
       if (unit) {
         tile.classList.add('has-unit');
-        tile.appendChild(buildBoardCard(unit, 'p1', transitionFlags?.get(key)));
+        const actionIndicator = actionIndicators?.get(key) ?? null;
+        if (actionIndicator?.kind === 'attack') tile.classList.add('unit-action-ready');
+        else if (actionIndicator?.kind === 'direct') tile.classList.add('unit-direct-ready');
+        tile.appendChild(buildBoardCard(unit, 'p1', transitionFlags?.get(key), actionIndicator));
       } else {
         if (validDropKeys?.has(key)) tile.classList.add('valid-drop');
         // Empty and legal-to-target-terrain-wise but currently blocked for the selected
@@ -164,7 +300,7 @@ export function renderBoard(state, selectedTileKey, validDropKeys, changedKeys =
   }
 }
 
-function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
+function buildBoardCard(unit, viewer = 'p1', transitionFlag = null, actionIndicator = null) {
   const card = CARD_BY_ID[unit.cardId];
   const el = document.createElement('div');
   // Sum of every side-bonus source (matches the `bonus` total computed below for the actual
@@ -173,7 +309,7 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   // showed gold). A buffed unit gets a persistent gold halo; a debuffed one gets the same
   // treatment in red — previously only the positive case existed, so a unit weakened on every
   // side had no card-level tell, only the per-side red digits.
-  const totalSideBonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.objSideBonus || 0) + (unit.debugSideBonus || 0) + (unit.dynamicSideBonus || 0);
+  const totalSideBonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.permanentSideBonus || 0) + (unit.objSideBonus || 0) + (unit.debugSideBonus || 0) + (unit.dynamicSideBonus || 0);
   const hasKeywordGrant = (unit.tempKeywords?.length > 0) || (unit.grantedKeywords?.length > 0) || (unit.permanentKeywords?.length > 0);
   const buffed = totalSideBonus > 0 || hasKeywordGrant;
   const debuffed = totalSideBonus < 0;
@@ -190,6 +326,8 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   // DOM className toggle rather than a second transitionFlags cycle (see UI_FEEDBACK_UPGRADE_
   // PLAN.md §14, "source glow -> target flash").
   const causalitySource = transitionFlag === 'causality-source' ? ' fx-flash-positive' : '';
+  const actionReady = actionIndicator?.kind === 'attack' ? ' action-ready' : '';
+  const directReady = actionIndicator?.kind === 'direct' ? ' direct-hq-ready' : '';
   // Protection ring — keyed off REMAINING protection (maxArmorHits - armorHits), not the
   // card's static max, so a Heavy Armor unit's inner ring disappears after its first absorbed
   // hit and the outer ring after its second, matching "a layer of protection being consumed"
@@ -200,7 +338,7 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   const remaining = maxArmor - unit.armorHits;
   const armorRing = maxArmor > 0 && remaining >= 1 ? ' armor-ring' : '';
   const armorRingHeavy = maxArmor > 1 && remaining >= 2 ? ' armor-ring-heavy' : '';
-  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${debuffed ? ' debuffed' : ''}${opponent ? ' opponent-card' : ''}${justSuppressed}${directHqSource}${armorAbsorbed}${causalitySource}${armorRing}${armorRingHeavy}`;
+  el.className = `board-card ${unit.owner} ${unit.state}${buffed ? ' buffed' : ''}${debuffed ? ' debuffed' : ''}${opponent ? ' opponent-card' : ''}${justSuppressed}${directHqSource}${armorAbsorbed}${causalitySource}${actionReady}${directReady}${armorRing}${armorRingHeavy}`;
 
   // Armor / Heavy Armor are tiers, not stacking keywords (maxArmorHits treats them the same
   // way — Heavy Armor wins outright) — but a Unit that starts with printed/granted Armor and
@@ -227,7 +365,7 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   const abilityHtml = card.ability
     ? `<span class="bc-ability-pip" data-tip="${esc(card.ability)}">⚡</span>`
     : '';
-  const bonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.objSideBonus || 0) + (unit.debugSideBonus || 0) + (unit.dynamicSideBonus || 0);
+  const bonus = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.permanentSideBonus || 0) + (unit.objSideBonus || 0) + (unit.debugSideBonus || 0) + (unit.dynamicSideBonus || 0);
   const armorPips = maxArmor > 0
     ? Array.from({ length: maxArmor }, (_, i) =>
         `<span class="armor-pip ${i < remaining ? 'full' : 'spent'}">◆</span>`
@@ -253,7 +391,8 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   // Any side no longer matching its printed value is flagged gold (increased) or red
   // (decreased) — every stat-changing effect (objective bonuses, Hero bonuses, command
   // effects, Inspire/Muster's live recalculation, the debug panel) funnels through the same
-  // tempSideBonus/grantedSideBonus/objSideBonus/debugSideBonus/dynamicSideBonus fields, so
+  // tempSideBonus/grantedSideBonus/permanentSideBonus/objSideBonus/debugSideBonus/
+  // dynamicSideBonus fields, so
   // one comparison per side covers all of them.
   const dirClass = (val, base) => val > base ? ' class="bc-dir-up"' : val < base ? ' class="bc-dir-down"' : '';
   // Status strip (suppressed/destroyed state + rotation) — a flow row between the stats
@@ -263,11 +402,22 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   // suppressed+rotated card with any keyword tag would visibly overlap "SUP"/"⟳" on top of
   // the tag text. Putting both in their own flow row before the keyword row removes the
   // collision structurally instead of only for today's specific cards.
+  const actionCount = Math.max(0, Number(actionIndicator?.count) || 0);
+  const actionTip = actionIndicator?.kind === 'attack'
+    ? `${actionCount} attack${actionCount === 1 ? '' : 's'} remaining — click this Unit to choose from ${actionIndicator.targetCount} legal target${actionIndicator.targetCount === 1 ? '' : 's'}`
+    : actionIndicator?.kind === 'direct'
+      ? `No legal target — ${actionCount} automatic damage to ${actionIndicator.targetPlayer.toUpperCase()} HQ when you end the turn`
+      : '';
+  const actionStatus = actionIndicator?.kind === 'attack'
+    ? `<span class="bc-status-icon bc-status-action attack" data-tip="${esc(actionTip)}">⚔×${actionCount}</span>`
+    : actionIndicator?.kind === 'direct'
+      ? `<span class="bc-status-icon bc-status-action direct" data-tip="${esc(actionTip)}">HQ×${actionCount}</span>`
+      : '';
   const statusLeft = unit.state === 'suppressed'
     ? '<span class="bc-status-icon bc-status-suppressed" title="Suppressed — cannot attack">⊘ SUP</span>'
     : unit.state === 'destroyed'
       ? '<span class="bc-status-icon bc-status-destroyed" title="Destroyed">DEAD</span>'
-      : '';
+      : actionStatus;
   const statusRight = unit.rotation
     ? `<span class="bc-status-icon bc-status-rotation" title="Rotated ${unit.rotation}°">⟳${unit.rotation}°</span>`
     : '';
@@ -299,6 +449,52 @@ function buildBoardCard(unit, viewer = 'p1', transitionFlag = null) {
   return el;
 }
 
+// ── Shared unit card face (rules text + stats + keyword explanations) ─────────
+// One builder for "what does this Unit card actually do" — used by the normal hand (below)
+// AND every card-choice screen (Mulligan, Forward Observer, Field Reserves, Craft candidates —
+// see buildChoiceCardFace in game.js, which wraps this for those non-hand contexts). Keeps the
+// keyword-explanation/ability-text markup from drifting between the two instead of each screen
+// re-inventing its own subset (the bug this was built to close: those screens showed name/cost/
+// stats/bare-keyword-name only, never the full rules text — see CHANGELOG).
+//
+// `tappable`, when true, marks the keyword tags and ability pip with `data-tip-tap` so the
+// floating-tip's click handler (game.js) will toggle them open on tap/click, stopping the click
+// from bubbling into the card's own select/confirm handler — a focus/tap-accessible way to
+// inspect a choice without accidentally committing to it. Left off for the normal in-turn hand
+// (unchanged there: those pips still only respond to hover, exactly as before this change),
+// since intercepting a click there would change existing placement-click behavior.
+// displayCost/discounted let callers (the normal hand, below) show a Tank-discount or
+// Command-Specialist-discount price through the same markup instead of the printed card.cost —
+// falls back to card.cost when omitted, so card-choice screens that never discount don't need to
+// pass anything. All numeric fields are validated via safeStat: a malformed n/e/s/w/cost/
+// pendingBuff (corrupt local data, or a tampered value arriving from the opponent's client over
+// the online sync channel) collapses to 0 instead of being interpolated as a raw string into the
+// template, which is what would let it become executable markup.
+export function buildUnitCardInnerHtml(card, { pendingBuff = 0, tappable = false, displayCost = null, discounted = false } = {}) {
+  const buff = safeStat(pendingBuff);
+  const dn = safeStat(card.n) + buff, de = safeStat(card.e) + buff, ds = safeStat(card.s) + buff, dw = safeStat(card.w) + buff;
+  const dirClass = buff > 0 ? ' class="bc-dir-up"' : '';
+  const dirTip = buff > 0 ? ` data-tip="Queued bonus: +${buff} all sides when this is played"` : '';
+  const tapAttrs = tappable ? ' data-tip-tap="1" tabindex="0" role="button" aria-label="Show full card details"' : '';
+  const kws = card.keyword ? (Array.isArray(card.keyword) ? card.keyword : [card.keyword]) : [];
+  const kwTags = kws.map(k => `<span class="bc-kw-tag"${KEYWORD_TEXT[k] ? ` data-tip="${esc(KEYWORD_TEXT[k])}"${tapAttrs}` : ''}>${esc(k)}</span>`).join('');
+  const abilityTag = card.ability ? `<span class="bc-ability-pip" data-tip="${esc(card.ability)}"${tapAttrs}>⚡</span>` : '';
+  const keywordRow = (kwTags || abilityTag) ? `<div class="bc-keyword-row">${kwTags}${abilityTag}</div>` : '';
+  const cost = safeStat(displayCost != null ? displayCost : card.cost);
+  const costHtml = discounted ? `<span class="hc-cost-discounted">${cost} ⛽</span>` : `${cost} ⛽`;
+  return `
+    <div class="hc-header">${esc(card.name)}</div>
+    <div class="hc-cost">${costHtml}</div>
+    <div class="hc-type">${esc(card.cls ?? '')}</div>
+    <div class="hc-dirs"${dirTip}>
+      <div></div><div${dirClass}>${dn}</div><div></div>
+      <div${dirClass}>${dw}</div><div style="color:#444">·</div><div${dirClass}>${de}</div>
+      <div></div><div${dirClass}>${ds}</div><div></div>
+    </div>
+    ${keywordRow}
+  `;
+}
+
 // ── Hand rendering ────────────────────────────────────────────────────────────
 
 // Render a player's hand into the element with the given id.
@@ -313,6 +509,7 @@ export function renderHand(handCardIds, containerId, selectedCardId, extras = {}
     if (!card) return;
 
     const div = document.createElement('div');
+    let effectiveCostForAffordability = null;
     div.className = 'hand-card';
     if (cardId === selectedCardId) div.classList.add('selected');
     div.dataset.cardId = cardId;
@@ -321,9 +518,7 @@ export function renderHand(handCardIds, containerId, selectedCardId, extras = {}
       // col=null — no tile chosen yet, so a column-restricted discount shows optimistically.
       const discount = extras.playerState ? discountFor(extras.playerState, card, null) : 0;
       const displayCost = card.cost - discount;
-      const costHtml = discount > 0
-        ? `<span class="hc-cost-discounted">${displayCost} ⛽</span>`
-        : `${displayCost} ⛽`;
+      effectiveCostForAffordability = displayCost;
       if (discount > 0) div.classList.add('hc-tank-discounted');
       // Pending stat buff (Deathrattle: Convoy Escort 138) — queued for the next matching
       // class played, ANY copy in hand (not just one arbitrarily marked). Sums every matching
@@ -335,58 +530,44 @@ export function renderHand(handCardIds, containerId, selectedCardId, extras = {}
         .filter(b => b.appliesTo === card.cls)
         .reduce((sum, b) => sum + b.amount, 0);
       if (pendingBuff > 0) div.classList.add('hc-buff-pending');
-      const dn = card.n + pendingBuff, de = card.e + pendingBuff, ds = card.s + pendingBuff, dw = card.w + pendingBuff;
-      const dirClass = pendingBuff > 0 ? ' class="bc-dir-up"' : '';
-      const dirTip = pendingBuff > 0 ? ` data-tip="Queued bonus: +${pendingBuff} all sides when this is played"` : '';
-      div.innerHTML = `
-        <div class="hc-header">${card.name}</div>
-        <div class="hc-cost">${costHtml}</div>
-        <div class="hc-type">${card.cls}</div>
-        <div class="hc-dirs"${dirTip}>
-          <div></div><div${dirClass}>${dn}</div><div></div>
-          <div${dirClass}>${dw}</div><div style="color:#444">·</div><div${dirClass}>${de}</div>
-          <div></div><div${dirClass}>${ds}</div><div></div>
-        </div>
-        ${(() => {
-        const kws = card.keyword ? (Array.isArray(card.keyword) ? card.keyword : [card.keyword]) : [];
-        const kwTags = kws.map(k => `<span class="bc-kw-tag"${KEYWORD_TEXT[k] ? ` data-tip="${esc(KEYWORD_TEXT[k])}"` : ''}>${k}</span>`).join('');
-        const abilityTag = card.ability ? `<span class="bc-ability-pip" data-tip="${esc(card.ability)}">⚡</span>` : '';
-        return (kwTags || abilityTag) ? `<div class="bc-keyword-row">${kwTags}${abilityTag}</div>` : '';
-      })()}
-      `;
+      // Routed through the same builder the card-choice screens use (buildUnitCardInnerHtml,
+      // above) so escaping/validation and markup never drift between the two — this used to be
+      // a fully duplicated inline template here despite that function's docblock already
+      // claiming it was shared.
+      div.innerHTML = buildUnitCardInnerHtml(card, { pendingBuff, displayCost, discounted: discount > 0 });
     } else if (card.type === 'command') {
       div.classList.add('hc-command');
       // Same discount as units above (Command Specialist's Hero Power applies here — see
       // discountFor's 'command' appliesTo — previously shown at full price regardless).
       const cmdDiscount = extras.playerState ? discountFor(extras.playerState, card, null) : 0;
-      const cmdDisplayCost = card.cost - cmdDiscount;
+      const cmdDisplayCost = safeStat(card.cost) - cmdDiscount;
+      effectiveCostForAffordability = cmdDisplayCost;
       const cmdCostHtml = cmdDiscount > 0
         ? `<span class="hc-cost-discounted">${cmdDisplayCost} ⛽</span>`
         : `${cmdDisplayCost} ⛽`;
       div.innerHTML = `
-        <div class="hc-header">${card.name}</div>
+        <div class="hc-header">${esc(card.name)}</div>
         <div class="hc-cost">${cmdCostHtml}</div>
         <div class="hc-type hc-command-label">COMMAND</div>
-        <div class="hc-effect">${card.effect || ''}</div>
-      `;
-    } else if (card.type === 'mission') {
-      div.classList.add('hc-mission');
-      div.innerHTML = `
-        <div class="hc-header">${card.name}</div>
-        <div class="hc-cost">${card.cost} ⛽</div>
-        <div class="hc-type hc-mission-label">MISSION</div>
-        <div class="hc-req">${card.req || ''}</div>
-        <div class="hc-reward-strip">
-          <div class="hc-reward-label">REWARD</div>
-          <div class="hc-reward-text">${card.reward || card.effect || ''}</div>
-        </div>
+        <div class="hc-effect">${esc(card.effect || '')}</div>
       `;
     } else {
       // objective (shouldn't normally be in hand, but handle gracefully)
       div.innerHTML = `
-        <div class="hc-header">${card.name}</div>
+        <div class="hc-header">${esc(card.name)}</div>
         <div class="hc-type">Objective</div>
       `;
+    }
+
+    if (
+      extras.playerState &&
+      effectiveCostForAffordability != null &&
+      extras.playerState.fuel < effectiveCostForAffordability
+    ) {
+      const shortfall = effectiveCostForAffordability - extras.playerState.fuel;
+      div.classList.add('cant-afford');
+      div.setAttribute('aria-disabled', 'true');
+      div.dataset.tip = `Need ${shortfall} more Fuel`;
     }
 
     el.appendChild(div);
@@ -402,6 +583,13 @@ export function renderHand(handCardIds, containerId, selectedCardId, extras = {}
 function esc(s) {
   return String(s ?? '').replace(/[&<>"]/g, ch =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+
+// Coerces a card numeric field (n/e/s/w/cost/pendingBuff) to a safe finite number for direct
+// template interpolation, falling back to 0 for anything malformed (NaN, a string, undefined) —
+// used wherever those fields land in HTML without going through esc().
+function safeStat(v) {
+  return Number.isFinite(v) ? v : 0;
 }
 
 export function heroCardHtml(card) {
@@ -571,9 +759,7 @@ export function appendLog(entries) {
       div.classList.add('log-suppressed');
     } else if (text.includes('armor absorbed')) {
       div.classList.add('log-absorbed');
-    } else if (text.includes('COMPLETE')) {
-      div.classList.add('log-mission');
-    } else if (text.includes('mission active') || /L[1-4]:/.test(text)) {
+    } else if (/L[1-4]:/.test(text)) {
       div.classList.add('log-objective');
     } else if (
       text.includes('un-suppressed') ||

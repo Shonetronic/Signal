@@ -1,4 +1,4 @@
-import { CARD_BY_ID, CARDS, ensureGeneratedCard } from './cards.js?v=1788366121';
+import { CARD_BY_ID, CARDS, ensureGeneratedCard } from './cards.js?v=1789117665';
 import {
   createInitialState,
   startOfTurn,
@@ -27,22 +27,22 @@ import {
   hasEscalated,
   markEscalateUse,
   expireTempFuelGrant,
-} from './state.js?v=1788366121';
-import { getAttackableTargets, resolveSingleAttack, tileKey, columnKeys, unitsInColumn, unitsOnBoard, checkHeroPassivesOnPlace, removeSuppression, checkCounteroffensiveGeneral, hasColumnFreedom, evaluateDirectHQ, recalculateDynamicStats, checkRally, resolveDestructionChain, applyPostDestructionEffects, getManeuverTargets, resolveManeuver, generateCraftCandidates, craftCandidateToCard, resolveCraftDrawback, nextCraftCost, advanceCraftCost, applyHandBuff, getObjectivePickEffectType, computeObjectivePickTargets, describeDynamicSideBonus } from './combat.js?v=1788366121';
-import { renderBoard, renderHand, renderHQ, appendLog, heroCardHtml, renderHeroZones, showFxPopup, drawFxConnector } from './ui.js?v=1788366121';
-import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1788366121';
-import { pushState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby, updatePlayerState } from './firebase.js?v=1788366121';
-import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetObjectiveCard, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn, debugRemoveCard } from './debug.js?v=1788366121';
-import { STARTER_DECKS, validateDeck, validateHeroRoster } from './decks.js?v=1788366121';
-import { runBotTurn } from './bot_player.js?v=1788366121';
-import { bestHeroDeployment } from './bot_ai.js?v=1788366121';
+  createBoardUnit,
+} from './state.js?v=1789117665';
+import { getAttackableTargets, resolveSingleAttack, tileKey, columnKeys, unitsInColumn, unitsOnBoard, checkHeroPassivesOnPlace, removeSuppression, applyGameEvents, unitSuppressedEvent, hasColumnFreedom, evaluateDirectHQ, recalculateDynamicStats, checkRally, resolveDestructionChain, applyPostDestructionEffects, getManeuverTargets, resolveManeuver, generateCraftCandidates, craftCandidateToCard, resolveCraftDrawback, nextCraftCost, advanceCraftCost, applyHandBuff, getObjectivePickEffectType, computeObjectivePickTargets, describeDynamicSideBonus, sampleRandomFromDeck, resolveQuartermasterPick } from './combat.js?v=1789117665';
+import { renderBoard, renderHand, renderHQ, appendLog, heroCardHtml, renderHeroZones, showFxPopup, drawFxConnector, describeAttackOutcome, summarizeTurnReadiness, renderEndTurnSummary, buildUnitCardInnerHtml } from './ui.js?v=1789117665';
+import { MAPS, getTerrain, canPlaceOnTerrain } from './maps.js?v=1789117665';
+import { pushState, pushVersionedState, subscribeState, setPlayerLeft, updateLobby, subscribeLobby, updatePlayerState } from './firebase.js?v=1789117665';
+import { debugAddCard, debugSetFuel, debugAdjustFuel, debugSetHQ, debugAdjustHQ, debugSetObjective, debugSetObjectiveCard, debugSetUnitState, debugBuffUnit, debugDrawCards, debugSkipToTurn, debugRemoveCard } from './debug.js?v=1789117665';
+import { STARTER_DECKS, loadCustomDecks, validateDeck, validateHeroRoster } from './decks.js?v=1789117665';
+import { runBotTurn } from './bot_player.js?v=1789117665';
+import { bestHeroDeployment } from './bot_ai.js?v=1789117665';
+import { canCancelInteraction, getInteractionDecision, getInteractionGuide } from './interaction.js?v=1789117665';
+import { isPrePlayMulliganSnapshot, normalizeRemoteBoard, prepareVersionedState, shouldAcceptRemoteState } from './sync.js?v=1789117665';
 
 // ── Deck selection ────────────────────────────────────────────────────────────
-// Tiles are rendered from STARTER_DECKS only in this client build — custom decks (built
-// via the lobby's Deck Builder) are deliberately excluded from this picker (see the
-// publish commit message): Deck Builder access doesn't put custom decks in front of a
-// match-starting player mixed in with the curated 8. validateDeck/validateHeroRoster are
-// still used below for the final pre-match sanity check, unrelated to this screen.
+// Tiles are rendered from STARTER_DECKS + saved custom decks. Custom decks are
+// re-validated here because card data may have changed since they were saved.
 // Starters keep data-deck="aggro" etc. — the selfplay harness clicks by that.
 let deckChoices = []; // parallel to data-choice indices on the tiles
 
@@ -63,6 +63,28 @@ function renderDeckGrid() {
         <div class="deck-flavor">${escapeHtml(d.flavor)}</div>
         <div class="deck-ap">${d.ids.length} cards</div>
       </div>`);
+  }
+
+  for (const d of loadCustomDecks()) {
+    const v = validateDeck(d.ids);
+    const hv = validateHeroRoster(d.heroIds ?? []);
+    if (v.valid && hv.valid) {
+      deckChoices.push({ ids: d.ids, heroIds: d.heroIds ?? [] });
+      grid.insertAdjacentHTML('beforeend',
+        `<div class="deck-option" data-choice="${deckChoices.length - 1}">
+          <div class="deck-name">${escapeHtml(d.name)}</div>
+          <div class="deck-flavor">Custom deck</div>
+          <div class="deck-ap">${d.ids.length} cards</div>
+        </div>`);
+    } else {
+      const errors = [...v.errors, ...hv.errors];
+      grid.insertAdjacentHTML('beforeend',
+        `<div class="deck-option deck-invalid" title="${escapeHtml(errors.join(' '))}">
+          <div class="deck-name">${escapeHtml(d.name)}</div>
+          <div class="deck-flavor">INVALID — ${escapeHtml(errors[0])} Fix it in the Deck Builder.</div>
+          <div class="deck-ap">${d.ids.length} cards</div>
+        </div>`);
+    }
   }
 }
 
@@ -272,6 +294,9 @@ const myRole   = params.get('role') ?? null; // 'p1' | 'p2' | null for local pla
 const isAiMode = params.get('ai') === '1';
 const urlMapId = params.get('mapId') ?? null; // set when this game came from the open-lobby browser — the map was already chosen there, so skip the map-picker
 let myLastPushId = null;
+let onlineWriteQueue = Promise.resolve();
+let onlineSyncGeneration = 0;
+let onlineSyncPaused = false;
 
 // Doc 04 §1 (locked setup order): Map is selected/revealed BEFORE deck+Hero roster
 // confirmation, and only ONE player ever picks it — a second picker for the other player
@@ -307,7 +332,6 @@ let p1LobbyData = null; // P2 stores P1's lobby push until P2 has also picked th
 let uiState = "idle";
 let selectedHandCardId = null;
 let pendingAttackerKey = null;
-let attackedThisTurn = new Map(); // tileKey → attack count used this turn
 let pendingCommandId = null;       // card ID of command awaiting a board target
 let preCommandState = null;        // state snapshot before command-targeting started (for cancel)
 let pendingRallyCryCount = 0;      // remaining Rally Cry target picks (0 = not active)
@@ -316,6 +340,91 @@ let lastTransitionFlags = new Map(); // tileKey -> 'suppressed'|'destroyed'|'arm
 let lastObjectiveTransitionFlags = new Map(); // tileKey -> 'obj-captured'|'obj-leveled' this commit — same one-shot idea, kept separate from lastTransitionFlags since it describes the objective at that tile, not a unit
 let lastHeroActivationKey = null; // "role-col" of the Hero Zone that just fired this commit, or null
 let gameOver = false;
+
+// Identity-based dedup for the _eventHistory animation system (see buildLastEvent/commitState/
+// receiveRemoteState) — every event id this client has already played-or-decided-not-to-play,
+// so the same id arriving again in a later snapshot's bounded history (a direct pushStateIfOnline
+// path carrying it forward unchanged, or Firebase redelivering an already-applied write) is
+// recognized as stale rather than replayed. Bounded and FIFO-evicted like the event history
+// itself — a match realistically produces well under a hundred events, so eviction is never
+// expected to actually happen, but nothing here should grow unboundedly over a very long session.
+const consumedEventIds = new Set();
+const CONSUMED_EVENT_IDS_MAX = 500;
+function markEventConsumed(id) {
+  if (!id || consumedEventIds.has(id)) return;
+  consumedEventIds.add(id);
+  if (consumedEventIds.size > CONSUMED_EVENT_IDS_MAX) {
+    consumedEventIds.delete(consumedEventIds.values().next().value);
+  }
+}
+
+const BLOCKING_MODAL_IDS = [
+  'fo-modal', 'field-reserves-modal',
+  'rotate-direction-modal', 'craft-picker-modal', 'quartermaster-modal', 'hero-deploy-modal',
+];
+
+function anyBlockingModalOpen() {
+  return BLOCKING_MODAL_IDS.some(id => document.getElementById(id)?.style.display === 'flex');
+}
+
+function currentInteractionContext() {
+  return {
+    uiState,
+    pendingObjectivePick: state?.pendingObjectivePick ?? null,
+    pendingArtyHits: state?.pendingArtyHits ?? 0,
+    hasBlockingModal: anyBlockingModalOpen(),
+    pendingCommandId,
+    selectedHeroZone,
+    syncPaused: onlineSyncPaused,
+  };
+}
+
+function unitNameAt(key) {
+  return CARD_BY_ID[state?.board?.[key]?.cardId]?.name ?? '';
+}
+
+function currentGuideSubjectName() {
+  if (!state) return '';
+  if (uiState === 'placing') return CARD_BY_ID[selectedHandCardId]?.name ?? '';
+  if (uiState === 'targeting') return unitNameAt(pendingAttackerKey);
+  if (uiState.startsWith('command-')) return CARD_BY_ID[pendingCommandId]?.name ?? '';
+  if (uiState === 'hero-targeting') return CARD_BY_ID[pendingHeroId]?.name ?? '';
+  if (uiState === 'hero-maneuver-destination') {
+    return pendingHeroManeuverSource?.hero?.name ?? CARD_BY_ID[pendingHeroId]?.name ?? '';
+  }
+  if (uiState.startsWith('unit-maneuver-')) {
+    return unitNameAt(pendingUnitManeuverPlacedKey) || 'ON-PLAY MANEUVER';
+  }
+  if (selectedHeroZone !== null) {
+    const heroId = state[state.initiative]?.heroZones?.[selectedHeroZone];
+    return CARD_BY_ID[heroId]?.name ?? 'HERO';
+  }
+  return '';
+}
+
+function renderInteractionGuide(el, guide) {
+  if (!el) return;
+  el.replaceChildren();
+  el.className = 'mode-banner';
+  if (!guide) {
+    el.style.display = 'none';
+    return;
+  }
+
+  el.classList.add(`tone-${guide.tone ?? 'choice'}`);
+  if (guide.mandatory) el.classList.add('mandatory');
+  const label = document.createElement('div');
+  label.className = 'mode-guide-label';
+  label.textContent = guide.label;
+  const instruction = document.createElement('div');
+  instruction.className = 'mode-guide-instruction';
+  instruction.textContent = guide.instruction;
+  const hint = document.createElement('div');
+  hint.className = 'mode-guide-hint';
+  hint.textContent = guide.hint;
+  el.append(label, instruction, hint);
+  el.style.display = 'block';
+}
 
 // ── Forward Observer state ─────────────────────────────────────────────────────
 let foCards = [];        // 3 cardIds drawn by FO
@@ -353,18 +462,10 @@ function renderMulliganCards(hand) {
     if (!card) return;
     const div = document.createElement('div');
     div.className = `hand-card mulligan-card${mulliganSelected.has(i) ? ' mulligan-discard' : ''}`;
-    const CLS_ABBR = { Infantry:'INF', Tank:'TNK', Artillery:'ART', Aircraft:'AIR' };
+    // Unit face (full rules text, stats, keyword explanations on hover/tap) shares
+    // buildUnitCardInnerHtml with the other card-choice modals — see its own comment for why.
     if (card.type === 'unit') {
-      div.innerHTML = `
-        <div class="hc-header">${card.name}</div>
-        <div class="hc-cost">${card.cost} ⛽</div>
-        <div class="hc-type">${CLS_ABBR[card.cls] ?? card.cls}</div>
-        <div class="hc-dirs">
-          <div></div><div>${card.n}</div><div></div>
-          <div>${card.w}</div><div style="color:#444">·</div><div>${card.e}</div>
-          <div></div><div>${card.s}</div><div></div>
-        </div>
-        ${card.keyword ? `<div class="bc-keyword-row"><span class="bc-kw-tag">${card.keyword}</span></div>` : ''}`;
+      div.innerHTML = buildUnitCardInnerHtml(card, { tappable: true });
     } else if (card.type === 'command') {
       div.classList.add('hc-command');
       div.innerHTML = `
@@ -372,17 +473,6 @@ function renderMulliganCards(hand) {
         <div class="hc-cost">${card.cost} ⛽</div>
         <div class="hc-type hc-command-label">COMMAND</div>
         <div class="hc-effect">${card.effect || ''}</div>`;
-    } else if (card.type === 'mission') {
-      div.classList.add('hc-mission');
-      div.innerHTML = `
-        <div class="hc-header">${card.name}</div>
-        <div class="hc-cost">${card.cost} ⛽</div>
-        <div class="hc-type hc-mission-label">MISSION</div>
-        <div class="hc-req">${card.req || ''}</div>
-        <div class="hc-reward-strip">
-          <div class="hc-reward-label">REWARD</div>
-          <div class="hc-reward-text">${card.reward || card.effect || ''}</div>
-        </div>`;
     } else {
       div.innerHTML = `
         <div class="hc-header">${card.name}</div>
@@ -406,10 +496,12 @@ function showMulligan(label, hand, onConfirm) {
   document.getElementById('mulligan-screen').style.display = 'flex';
   document.getElementById('btn-mulligan-confirm').onclick = () => {
     document.getElementById('mulligan-screen').style.display = 'none';
+    clearPinnedTip();
     onConfirm([...mulliganSelected]);
   };
   document.getElementById('btn-mulligan-keep').onclick = () => {
     document.getElementById('mulligan-screen').style.display = 'none';
+    clearPinnedTip();
     onConfirm([]);
   };
 }
@@ -645,19 +737,34 @@ function finishStartGame(s, mapId) {
 // silently clobber the other's hand, which a full-object replace could.
 let hostMulliganPhaseDone = false; // p1/host only — guards finishStartGame from firing twice
 
-function beginOnlineMulligan(s, mapId) {
+async function beginOnlineMulligan(s, mapId) {
   disarmWaitingTimeout();
   document.getElementById('lobby').style.display = 'none';
-  document.getElementById('waiting-screen').style.display = 'none';
+  document.getElementById('waiting-screen').style.display = 'flex';
+  document.getElementById('waiting-msg').textContent = 'Preparing opening hands...';
   s = { ...s, p1: { ...s.p1, mulliganDone: false }, p2: { ...s.p2, mulliganDone: false } };
   state = s;
-  pushStateIfOnline(state); // safe full push — P2 hasn't written anything at this node yet
+  // Wait until the initial game object has replaced the preceding `_phase: "ready"` lobby
+  // object before subscribing or accepting mulligan input. Revisioned writes are asynchronous;
+  // the previous fire-and-forget flow let onValue() immediately replay the lobby object, whose
+  // missing p1/p2 fields then erased the host's local player slices and crashed showMulligan().
+  // It also left a narrow window where an extremely fast host confirmation could be overwritten
+  // by the still-pending initial full-state write.
+  await pushStateIfOnline(state);
+  if (onlineSyncPaused || !isPrePlayMulliganSnapshot(state)) {
+    document.getElementById('waiting-msg').textContent = 'Connection error while preparing the match — check your connection and reload.';
+    return;
+  }
   subscribeState(gameId, remoteState => {
     if (hostMulliganPhaseDone) return; // finishStartGame's own listener has taken over by now
     if (remoteState._playerLeft && remoteState._playerLeft !== myRole) {
       showDisconnectScreen(remoteState._playerLeft);
       return;
     }
+    // onValue() replays the current value on subscription. Normally the awaited write above
+    // means that is already a complete game state, but keep this schema guard as a hard safety
+    // boundary against a delayed/retried lobby snapshot ever corrupting local state again.
+    if (!isPrePlayMulliganSnapshot(remoteState)) return;
     // No _pushId echo-guard here (unlike every other online listener): updatePlayerState
     // (P2's mulligan confirmation) writes only games/{gameId}/p2, never touching the top-level
     // _pushId field at all — it's left stale at whatever P1's own initial full push set it to,
@@ -673,6 +780,7 @@ function beginOnlineMulligan(s, mapId) {
       finishStartGame(state, mapId);
     }
   });
+  document.getElementById('waiting-screen').style.display = 'none';
   showOnlineMulligan(mapId);
 }
 
@@ -697,6 +805,16 @@ function showOnlineMulligan(mapId) {
       finishStartGame(state, mapId);
       return;
     }
+    // Found 2026-09-09: updatePlayerState's write above can synchronously (reentrantly) fire
+    // the host's own beginOnlineMulligan listener via Firebase's local echo, BEFORE this
+    // function resumes — if the other player was already done, that reentrant call detects
+    // both mulligans complete and runs finishStartGame() right here, mid-call. Resuming past
+    // that point and unconditionally showing the waiting screen would stomp the just-revealed
+    // board with a stale "waiting for mulligan" banner. Bail if the match already started —
+    // state.readyForPlay is the same authoritative "has the match actually started" flag
+    // finishStartGame sets and the P2-online listener already keys off for this exact purpose,
+    // so check that directly rather than inferring it from a DOM side-effect.
+    if (state?.readyForPlay === true) return;
     document.getElementById('waiting-screen').style.display = 'flex';
     document.getElementById('waiting-msg').textContent = myRole === 'p1'
       ? 'Waiting for the other player to finish their mulligan...'
@@ -888,8 +1006,20 @@ function redraw() {
   if (!state) return;
   // Debug/testing hook only — read-only snapshot for external tooling (e.g. selfplay bot).
   // No gameplay effect: nothing reads this back into game state.
-  window.__SIGNAL_DEBUG__ = { state, uiState, selectedHandCardId, pendingAttackerKey, attackedThisTurn: [...attackedThisTurn.entries()] };
+  window.__SIGNAL_DEBUG__ = { state, uiState, selectedHandCardId, pendingAttackerKey };
   renderHQ(state);
+
+  // Idle-turn guidance is intentionally hidden while a choice/modal is active, while an online
+  // opponent is playing, or during the bot's P2 turn. In every visible case the same summary
+  // drives both per-Unit badges and the End Turn forecast, so the two explanations cannot drift.
+  const interactionDecision = getInteractionDecision(currentInteractionContext());
+  const controlsThisTurn = isOnline
+    ? state.initiative === myRole
+    : !isAiMode || state.initiative === 'p1';
+  const showTurnReadiness = !gameOver && controlsThisTurn && uiState === 'idle' && !interactionDecision.pending;
+  const turnReadiness = showTurnReadiness
+    ? summarizeTurnReadiness(state, state.initiative)
+    : null;
 
   // One-shot transition flags (destroy reticle, objective-captured flash, hero-activation glow)
   // are meant to play exactly once, on the render right after the commitState that set them —
@@ -908,9 +1038,9 @@ function redraw() {
   lastHeroActivationKey = null;
 
   if (uiState === "placing") {
-    renderBoard(state, null, getValidTiles(), lastChangedKeys, transitionFlagsForThisRender, getTerrainBlockedTiles(), objectiveTransitionFlagsForThisRender);
+    renderBoard(state, null, getValidTiles(), lastChangedKeys, transitionFlagsForThisRender, getTerrainBlockedTiles(), objectiveTransitionFlagsForThisRender, null);
   } else {
-    renderBoard(state, null, null, lastChangedKeys, transitionFlagsForThisRender, null, objectiveTransitionFlagsForThisRender);
+    renderBoard(state, null, null, lastChangedKeys, transitionFlagsForThisRender, null, objectiveTransitionFlagsForThisRender, turnReadiness?.indicators ?? null);
   }
 
   if (uiState === "targeting" && pendingAttackerKey) {
@@ -928,8 +1058,11 @@ function redraw() {
 
   if (uiState === "command-targeting" && pendingCommandId !== null) {
     const validKeys = getCommandTargets(pendingCommandId);
-    const ENEMY_CMDS = new Set([16, 20, 79]);
-    const cls = ENEMY_CMDS.has(pendingCommandId) ? 'targetable' : 'cmd-target';
+    // Current Set 1 IDs are strings. The old numeric enemy-command list could never match and
+    // made every target blue. C18/C19 deliberately destroy the chosen friendly Unit, so they
+    // use the same red danger treatment as an enemy attack; utility/friendly picks stay blue.
+    const DANGEROUS_TARGET_COMMANDS = new Set(['C18', 'C19']);
+    const cls = DANGEROUS_TARGET_COMMANDS.has(pendingCommandId) ? 'targetable' : 'cmd-target';
     for (const key of validKeys) {
       const el = document.querySelector(`[data-key="${key}"]`);
       if (el) el.classList.add(cls);
@@ -943,6 +1076,8 @@ function redraw() {
     }
   }
   if (uiState === 'hero-maneuver-destination' && pendingHeroManeuverSource) {
+    const sourceEl = document.querySelector(`[data-key="${pendingHeroManeuverSource.key}"]`);
+    if (sourceEl) sourceEl.classList.add('selected-unit');
     for (const key of getManeuverTargets(state, pendingHeroManeuverSource.key)) {
       const el = document.querySelector(`[data-key="${key}"]`);
       if (el) el.classList.add('cmd-target');
@@ -956,6 +1091,8 @@ function redraw() {
     }
   }
   if (uiState === 'command-maneuver-destination' && pendingCommandManeuverSource?.key) {
+    const sourceEl = document.querySelector(`[data-key="${pendingCommandManeuverSource.key}"]`);
+    if (sourceEl) sourceEl.classList.add('selected-unit');
     for (const key of getManeuverTargets(state, pendingCommandManeuverSource.key)) {
       const el = document.querySelector(`[data-key="${key}"]`);
       if (el) el.classList.add('cmd-target');
@@ -968,6 +1105,8 @@ function redraw() {
     }
   }
   if (uiState === 'unit-maneuver-destination' && pendingUnitManeuverSource?.key) {
+    const sourceEl = document.querySelector(`[data-key="${pendingUnitManeuverSource.key}"]`);
+    if (sourceEl) sourceEl.classList.add('selected-unit');
     for (const key of getManeuverTargets(state, pendingUnitManeuverSource.key)) {
       const el = document.querySelector(`[data-key="${key}"]`);
       if (el) el.classList.add('cmd-target');
@@ -980,6 +1119,8 @@ function redraw() {
     }
   }
   if (uiState === 'command-coordstrike-second' && pendingCoordStrikeFirst) {
+    const firstEl = document.querySelector(`[data-key="${pendingCoordStrikeFirst}"]`);
+    if (firstEl) firstEl.classList.add('selected-unit');
     for (const key of getCoordStrikeSecondCandidates(pendingCoordStrikeFirst)) {
       const el = document.querySelector(`[data-key="${key}"]`);
       if (el) el.classList.add('cmd-target');
@@ -1002,7 +1143,6 @@ function redraw() {
   // "locked in" via the existing selectedTileKey-style highlight class, so it's visually obvious
   // the player is now picking a destination, not another Unit.
   const modeBanner = document.getElementById('mode-banner');
-  if (modeBanner) modeBanner.style.display = 'none';
   if (uiState === 'objective-picking' && state.pendingObjectivePick) {
     const pick = state.pendingObjectivePick;
     const obj = state.objectives[pick.objectiveKey];
@@ -1016,10 +1156,6 @@ function redraw() {
         const srcEl = document.querySelector(`[data-key="${pick.sourceKey}"]`);
         if (srcEl) srcEl.classList.add('highlight');
       }
-      if (modeBanner) {
-        modeBanner.textContent = objectivePickBannerText(state, pick);
-        modeBanner.style.display = 'block';
-      }
     }
   }
 
@@ -1027,11 +1163,40 @@ function redraw() {
   renderHand(state[handRole].hand, 'p1-hand', selectedHandCardId, { playerState: state[handRole] });
   renderHeroZones(state, selectedHeroZone, heroActivationKeyForThisRender);
 
+  // Radio Interference targets the opponent's Hero strip rather than a board tile. Previously
+  // the log asked for an enemy Hero but no Hero was visually marked as clickable.
+  if (uiState === 'command-hero-targeting') {
+    const opponent = state.initiative === 'p1' ? 'p2' : 'p1';
+    document.querySelectorAll(`#hero-zone-${opponent} .hero-zone-slot.filled`)
+      .forEach(el => el.classList.add('danger-target'));
+  }
+
+  const objectiveInstruction = uiState === 'objective-picking' && state.pendingObjectivePick
+    ? objectivePickBannerText(state, state.pendingObjectivePick)
+    : '';
+  const remainingChoices = uiState === 'arty-targeting'
+    ? (pendingArtyHitCount || state.pendingArtyHits || 0)
+    : uiState === 'command-targeting'
+      ? pendingRallyCryCount
+      : uiState === 'command-maneuver-source'
+        ? pendingCommandManeuverRemaining
+        : 0;
+  const commandCanFinishEarly = ((pendingCommandId === 'C03' || pendingCommandId === 'C10') && pendingRallyCryCount < 2)
+    || (pendingCommandId === 'C32' && pendingRallyCryCount === 1);
+  renderInteractionGuide(modeBanner, getInteractionGuide({
+    uiState,
+    subjectName: currentGuideSubjectName(),
+    customInstruction: objectiveInstruction,
+    remainingChoices,
+    canFinishEarly: commandCanFinishEarly,
+    selectedHeroZone,
+    syncPaused: onlineSyncPaused,
+  }));
+
   const cancelBtn = document.getElementById('btn-cancel');
   if (cancelBtn) {
-    const rallyCryAlreadyPicked = ((pendingCommandId === 'C03' || pendingCommandId === 'C10') && pendingRallyCryCount < 2)
-    || (pendingCommandId === 'C32' && pendingRallyCryCount === 1);
-    cancelBtn.textContent = rallyCryAlreadyPicked ? 'Done' : 'Cancel';
+    cancelBtn.textContent = commandCanFinishEarly ? 'Done' : 'Cancel';
+    cancelBtn.disabled = !canCancelInteraction(currentInteractionContext());
   }
 
   const endTurnBtn = document.getElementById('btn-end-turn');
@@ -1041,12 +1206,24 @@ function redraw() {
     document.getElementById('turn-display').textContent = isMyTurn
       ? `Round ${round} — YOUR TURN`
       : `Round ${round} — WAITING FOR OPPONENT`;
-    endTurnBtn.disabled = !isMyTurn;
-    endTurnBtn.textContent = isMyTurn ? 'End Turn' : 'Waiting...';
+    endTurnBtn.disabled = !isMyTurn || interactionDecision.pending;
+    endTurnBtn.textContent = !isMyTurn ? 'Waiting...' : interactionDecision.pending ? 'Finish Choice' : 'End Turn';
   } else {
-    endTurnBtn.disabled = false;
-    endTurnBtn.textContent = `End ${state.initiative.toUpperCase()} Turn`;
+    endTurnBtn.disabled = interactionDecision.pending;
+    endTurnBtn.textContent = interactionDecision.pending ? 'Finish Choice' : `End ${state.initiative.toUpperCase()} Turn`;
   }
+  const forecastTitle = turnReadiness
+    ? [
+        turnReadiness.totalDirectHqDamage > 0
+          ? `Ending now deals ${turnReadiness.totalDirectHqDamage} automatic damage to ${turnReadiness.targetPlayer.toUpperCase()} HQ${turnReadiness.lethal ? ' and wins the game' : ''}.`
+          : '',
+        turnReadiness.availableAttackCount > 0
+          ? `${turnReadiness.availableAttackCount} usable attack${turnReadiness.availableAttackCount === 1 ? '' : 's'} will be forfeited.`
+          : '',
+      ].filter(Boolean).join(' ')
+    : '';
+  endTurnBtn.title = interactionDecision.reason ?? forecastTitle;
+  renderEndTurnSummary(document.getElementById('end-turn-summary'), turnReadiness);
 
   populateDebugObjectiveDropdown();
   fitBoardArea();
@@ -1076,35 +1253,244 @@ function syncObjectivePickUiState() {
   }
 }
 
-function commitState(newState, logLines, transitionFlags, objectiveTransitionFlags, heroActivationKey) {
+// Found 2026-09-XX: every transition flag/timer-based effect below (suppression/destroy/armor
+// flashes, Hero activation glow, Objective capture popup, Direct HQ flash+connector) was 100%
+// local — computed by the acting client, applied to its own redraw(), then thrown away. Nothing
+// of it ever reached the pushed state, so the opponent's client only ever saw the final board
+// position with no animation at all. buildLastEvent captures exactly the same data commitState
+// already collects for its OWN local redraw into a small serializable object, stored on `state`
+// itself so it rides along on the normal Firebase push — no separate channel, no risk of it
+// arriving out of order relative to the state it describes.
+//
+// Found 2026-09-XX (GPT review of 289b9cb): a single `_lastEvent` field plus a "does the incoming
+// revision follow mine by exactly 1" check isn't enough — a direct pushStateIfOnline(state) call
+// that never went through commitState (placement's early-return branches, Cancel restoring
+// preCommandState) spreads whatever `_lastEvent` the state already had and pushes it as-is, so
+// the receiver's "exactly +1" check sees a perfectly sequential revision carrying a stale event
+// and replays it. Every event now gets a unique `id` (nextEventId) and is APPENDED to a small
+// bounded `_eventHistory` array (see commitState) instead of replacing a single field. The
+// receiver (receiveRemoteState) tracks which ids it has already consumed and only ever plays an
+// id once, however many times it happens to ride along in a snapshot — so a direct-push path that
+// carries an old id forward unchanged is harmless by construction: that id was already consumed
+// when it first arrived. This also fixes the flip side (see receiveRemoteState) — a skipped/
+// coalesced Firebase delivery that jumps more than one revision no longer loses whatever events
+// were in between, since they're still sitting in the bounded history of whatever snapshot
+// eventually does arrive, still carrying their own never-yet-consumed ids.
+//
+// Deliberately NOT cleared on the direct-push paths that don't generate a new event: doing so
+// would defeat the catch-up behavior above (nothing left to catch up on) for the sake of a
+// guarantee the id-based dedup already provides for free. See pushStateIfOnline call sites in the
+// PLACING and Cancel handlers for the audited conclusion.
+let eventIdCounter = 0;
+const EVENT_HISTORY_MAX = 8; // small bounded history, per-client consumption tracking below
+
+function nextEventId() {
+  eventIdCounter += 1;
+  return `${myRole ?? 'x'}-${Date.now()}-${eventIdCounter}`;
+}
+
+// tileUnitSnapshot: {tileKey: instanceId|null} — which PHYSICAL unit (state.js's stable
+// instanceId, follows a Unit across Maneuver) occupied each flagged tile at the moment this
+// event was created, or null if the flag means the tile should be empty (a 'destroyed' flag).
+// Consulted only at PLAYBACK time (see receiveRemoteState) to skip showing a flourish/popup for
+// a tile whose occupant has since changed — found 2026-09-10 (GPT review): without this, a
+// delayed/queued replay of an old event could paint "just destroyed" or "just suppressed" over
+// a completely different Unit that has since moved onto the same tile.
+function buildLastEvent(transitionFlags, objectiveTransitionFlags, heroActivationKey, directHqDamage, popups, connectors, tileUnitSnapshot) {
+  const event = {};
+  if (transitionFlags?.size) event.transitionFlags = Object.fromEntries(transitionFlags);
+  if (objectiveTransitionFlags?.size) event.objectiveTransitionFlags = Object.fromEntries(objectiveTransitionFlags);
+  if (heroActivationKey) event.heroActivationKey = heroActivationKey;
+  if (directHqDamage && (directHqDamage.p1 > 0 || directHqDamage.p2 > 0)) event.directHqDamage = directHqDamage;
+  if (popups?.length) event.popups = popups;
+  if (connectors?.length) event.connectors = connectors;
+  if (!Object.keys(event).length) return null;
+  event.id = nextEventId();
+  if (tileUnitSnapshot && Object.keys(tileUnitSnapshot).length) event.tileUnitSnapshot = tileUnitSnapshot;
+  return event;
+}
+
+// Timer-based effects that live outside the CSS-class transitionFlags system redraw() already
+// handles (see redraw()'s own transitionFlagsForThisRender/objectiveTransitionFlagsForThisRender/
+// heroActivationKeyForThisRender consumption) — Direct HQ's delayed result flash/popup and its
+// source->HQ connector line, plus (2026-09-XX) generic combat popups (destroy/suppress/Armor-
+// absorbed text) and causality connectors (Rally/Breakthrough/Last Stand source->target lines),
+// both of which used to fire as direct, local-only DOM calls right inside the attack handler and
+// so never reached the opponent. Called once locally right after the commit that produced this
+// event, and once per not-yet-consumed event on the receiving client (see receiveRemoteState) —
+// same function, same beats, so the SOURCE->RESULT sequencing feels identical on both sides.
+// `extraDelayMs` staggers a batch of several distinct events replayed at once (a skipped/
+// coalesced delivery catching up on more than one event in a single snapshot) so their timer-
+// based effects don't all land in the same instant — 0 for the normal single-event case.
+//
+// popups/connectors carry their finished display text and tile KEYS, not raw pixel coordinates
+// or unit names re-derived later — resolved to actual DOM rects at consumption time (works for
+// both clients' own layouts) and safe to play after the unit they describe has already left the
+// board, since the text was baked in back when it was still there (see the attack handler).
+function triggerEventEffects(event, extraDelayMs = 0) {
+  if (!event) return;
+  if (event.directHqDamage) {
+    if (event.directHqDamage.p1 > 0) setTimeout(() => flashDirectHit('p1', event.directHqDamage.p1), 200 + extraDelayMs);
+    if (event.directHqDamage.p2 > 0) setTimeout(() => flashDirectHit('p2', event.directHqDamage.p2), 200 + extraDelayMs);
+  }
+  if (event.transitionFlags && event.directHqDamage) {
+    for (const [key, flag] of Object.entries(event.transitionFlags)) {
+      if (flag !== 'direct-hq') continue;
+      const owner = state?.board?.[key]?.owner;
+      if (!owner) continue;
+      const targetPlayer = owner === 'p1' ? 'p2' : 'p1';
+      setTimeout(() => {
+        const fromEl = document.querySelector(`.tile[data-key="${key}"] .board-card`);
+        const toEl = document.getElementById(`${targetPlayer}-hq`);
+        if (fromEl && toEl) drawFxConnector(fromEl, toEl);
+      }, 200 + extraDelayMs);
+    }
+  }
+  if (event.popups?.length) {
+    for (const p of event.popups) {
+      setTimeout(() => {
+        const tileEl = document.querySelector(`.tile[data-key="${p.tileKey}"]`);
+        if (!tileEl) return;
+        const rect = tileEl.getBoundingClientRect();
+        showFxPopup(rect.left + rect.width / 2, rect.top, p.text);
+      }, extraDelayMs);
+    }
+  }
+  if (event.connectors?.length) {
+    setTimeout(() => {
+      for (const c of event.connectors) {
+        const sourceEl = document.querySelector(`.tile[data-key="${c.fromKey}"] .board-card`);
+        const targetEl = document.querySelector(`.tile[data-key="${c.toKey}"] .board-card`);
+        flashCausalityTarget(c.toKey);
+        if (sourceEl && targetEl) drawFxConnector(sourceEl, targetEl);
+      }
+    }, 150 + extraDelayMs);
+  }
+}
+
+// Builds redraw()'s one-shot CSS flourish inputs for a single event, filtered via
+// tileUnitSnapshot against `simulatedBoard` — a {tileKey: instanceId|null} view of "what each
+// tile looks like as of right before this specific event," NOT the single final authoritative
+// board every event in a coalesced batch shares. GPT review, finding 2 (2026-09-10): the two are
+// only the same for a tile's LAST event in a batch. A tile hit by two of this batch's OWN events
+// in sequence (suppressed, then destroyed) needs the FIRST one checked against the board as it
+// stood before either applied — checking straight against the final (post-destroy) board would
+// wrongly treat the suppress step itself as stale, since the tile is already empty by the time
+// the whole delivery has landed. The caller (receiveRemoteState) seeds `simulatedBoard` from the
+// real board as it stood before this delivery, then advances it by one event's tileUnitSnapshot
+// at a time as each is displayed — so a LATER, truly unrelated occupant (a different physical
+// unit that has since moved onto the same tile, whether from a later event in this same batch or
+// from a live receiveRemoteState assignment that already happened) is still correctly caught. No
+// snapshot recorded for a tile (older/defensive case) shows it unfiltered, same as before.
+function computeDisplayFlags(ev, simulatedBoard) {
+  const transitionFlags = new Map();
+  if (ev.transitionFlags) {
+    for (const [key, flag] of Object.entries(ev.transitionFlags)) {
+      const expected = ev.tileUnitSnapshot?.[key];
+      if (expected === undefined) { transitionFlags.set(key, flag); continue; }
+      const current = simulatedBoard?.[key]?.instanceId ?? null;
+      if (expected === current) transitionFlags.set(key, flag);
+    }
+  }
+  // Advance the simulated timeline to reflect this event's own claim, regardless of whether it
+  // passed the check above — a filtered-out (stale) event shouldn't leave later comparisons
+  // pinned to an even-older, already-wrong baseline.
+  if (ev.tileUnitSnapshot && simulatedBoard) {
+    for (const [key, instanceId] of Object.entries(ev.tileUnitSnapshot)) {
+      simulatedBoard[key] = instanceId ? { instanceId } : null;
+    }
+  }
+  const objectiveTransitionFlags = ev.objectiveTransitionFlags ? new Map(Object.entries(ev.objectiveTransitionFlags)) : new Map();
+  return { transitionFlags, objectiveTransitionFlags, heroActivationKey: ev.heroActivationKey ?? null };
+}
+
+function commitState(newState, logLines, transitionFlags, objectiveTransitionFlags, heroActivationKey, directHqDamage, popups, connectors) {
+  if (isOnline && onlineSyncPaused) {
+    setOnlineSyncStatus('Connection interrupted — actions are paused until the shared game reconnects.', 'error');
+    return false;
+  }
   lastChangedKeys = new Set(); // player acted — clear opponent highlights
   lastTransitionFlags = transitionFlags ?? new Map();
   lastObjectiveTransitionFlags = objectiveTransitionFlags ?? new Map();
   lastHeroActivationKey = heroActivationKey ?? null;
-  state = { ...newState, log: [...(newState.log ?? []), ...(logLines ?? [])] };
+  // Snapshot which physical unit (instanceId) sits on each flagged tile AFTER this mutation —
+  // null means the flag expects the tile to be empty ('destroyed'). See buildLastEvent's doc
+  // comment for why this rides along on the event itself.
+  const tileUnitSnapshot = {};
+  if (transitionFlags?.size) {
+    for (const key of transitionFlags.keys()) tileUnitSnapshot[key] = newState.board?.[key]?.instanceId ?? null;
+  }
+  const lastEvent = buildLastEvent(transitionFlags, objectiveTransitionFlags, heroActivationKey, directHqDamage, popups, connectors, tileUnitSnapshot);
+  // Append, don't replace — `newState._eventHistory` is whatever history the state being
+  // committed already carried forward (normally identical to the live `state`'s own history,
+  // since almost every commitState call builds `newState` from it). See buildLastEvent's doc
+  // comment for why this is safe even on the direct pushStateIfOnline paths that skip commitState
+  // entirely and so never append anything here at all.
+  const priorHistory = Array.isArray(newState._eventHistory) ? newState._eventHistory : [];
+  const eventHistory = lastEvent ? [...priorHistory, lastEvent].slice(-EVENT_HISTORY_MAX) : priorHistory;
+  state = { ...newState, log: [...(newState.log ?? []), ...(logLines ?? [])], _eventHistory: eventHistory };
   if (logLines?.length) appendLog(logLines);
   syncArtyTargetingUiState();
   syncObjectivePickUiState();
   redraw();
+  triggerEventEffects(lastEvent);
+  // GPT review, finding 1 (2026-09-10): this client just played its own event locally, but
+  // nothing previously marked its id consumed — only receiveRemoteState did that. A later
+  // delivery (the opponent's own next action, built from a state that already carries this id
+  // forward) would see this client's own past event as "unseen" and replay it right back at it.
+  // Marking it here, right where it's actually played, closes that without touching the
+  // opponent's own independent right to play the SAME id once on THEIR client (their own
+  // consumedEventIds set is separate — this only affects this client's).
+  if (lastEvent) markEventConsumed(lastEvent.id);
   pushStateIfOnline(state);
+  return true;
 }
 
 function pushStateIfOnline(s) {
-  if (!isOnline) return;
+  if (!isOnline) return Promise.resolve(null);
+  if (onlineSyncPaused) return Promise.resolve(null);
   const pushId = `${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+  const prepared = prepareVersionedState(s, pushId);
   myLastPushId = pushId;
-  pushState(gameId, { ...s, _pushId: pushId });
+  state = prepared.state;
+  const generation = onlineSyncGeneration;
+
+  onlineWriteQueue = onlineWriteQueue
+    .then(() => {
+      if (generation !== onlineSyncGeneration) return null;
+      return pushVersionedState(gameId, prepared.state, prepared.expectedRevision);
+    })
+    .catch(error => {
+      if (generation !== onlineSyncGeneration) return;
+      console.error('Online state write failed', error);
+      onlineSyncGeneration += 1; // invalidate any later writes queued from the stale snapshot
+      onlineSyncPaused = true;
+      myLastPushId = null;
+
+      if (error?.code === 'state-conflict' && error.latestState) {
+        receiveRemoteState(error.latestState, { force: true, preserveSyncStatus: true });
+        onlineSyncPaused = false;
+        setOnlineSyncStatus('Another update arrived first. The shared game was refreshed; please retry your action.');
+      } else {
+        setOnlineSyncStatus('Connection interrupted — actions are paused until the shared game reconnects.', 'error');
+        redraw();
+      }
+    });
+  return onlineWriteQueue;
+}
+
+function setOnlineSyncStatus(message = '', tone = '') {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  el.textContent = message;
+  el.classList.toggle('error', tone === 'error');
+  el.style.display = message ? 'block' : 'none';
 }
 
 // Firebase converts JS arrays to objects with integer keys on retrieval.
 // This restores them to real arrays for all fields that must be arrays.
 function normalizeFirebaseState(raw) {
   const toArray = v => Array.isArray(v) ? v : Object.values(v ?? {});
-  const fixUnit = u => u ? { ...u, tempKeywords: toArray(u.tempKeywords), grantedKeywords: toArray(u.grantedKeywords), permanentKeywords: toArray(u.permanentKeywords) } : u;
-  const fixBoard = b => {
-    if (!b) return {};
-    return Object.fromEntries(Object.entries(b).map(([k, v]) => [k, fixUnit(v)]));
-  };
   // heroZones is POSITIONAL (index = board column) and usually sparse, e.g. [null,87,null,null].
   // Firebase strips nulls, so toArray() would collapse that to [87] and silently move the hero
   // to column 0. Rebuild by index instead.
@@ -1121,7 +1507,6 @@ function normalizeFirebaseState(raw) {
     ...p,
     hand:     toArray(p.hand),
     deck:     toArray(p.deck),
-    missions: toArray(p.missions),
     heroRoster: toArray(p.heroRoster),
     heroZones:  fixZones(p.heroZones),
     heroesActivatedThisTurn: toArray(p.heroesActivatedThisTurn),
@@ -1139,20 +1524,50 @@ function normalizeFirebaseState(raw) {
   for (const [id, def] of Object.entries(generatedCards)) {
     ensureGeneratedCard(id, def);
   }
+  // _eventHistory (see buildLastEvent/commitState) is an array of small event objects, each of
+  // which can itself carry a popups/connectors array — every level needs the same Firebase
+  // array-to-object fixup, or a malformed (non-array) popups/connectors field would silently
+  // fail the `.length`/iteration checks in triggerEventEffects and just drop that part of the
+  // event instead of throwing.
+  const eventHistory = toArray(raw._eventHistory).filter(Boolean).map(ev => ({
+    ...ev,
+    ...(ev.popups ? { popups: toArray(ev.popups) } : {}),
+    ...(ev.connectors ? { connectors: toArray(ev.connectors) } : {}),
+  }));
   return {
     ...raw,
     generatedCards,
     log:   toArray(raw.log),
     p1:    fixPlayer(raw.p1),
     p2:    fixPlayer(raw.p2),
-    board: fixBoard(raw.board),
+    board: normalizeRemoteBoard(raw.board),
+    _eventHistory: eventHistory,
   };
 }
 
-function receiveRemoteState(remoteState) {
+function receiveRemoteState(remoteState, { force = false, preserveSyncStatus = false } = {}) {
   const normalized = normalizeFirebaseState(remoteState);
+  // Captured BEFORE onlineSyncPaused is reset below (GPT review, finding 2) — the whole point is
+  // to know whether THIS delivery is a recovery snapshot (initial load, forced conflict adoption,
+  // or a reconnect resuming a paused session), and resetting the flag first would make that
+  // indistinguishable from a normal live delivery by the time we check it.
+  const wasSyncPaused = onlineSyncPaused;
+  const isFirstSnapshot = !state?.board; // nothing to compare against yet — see below
+  const isRecoveryDelivery = force || wasSyncPaused || isFirstSnapshot;
+  if (!shouldAcceptRemoteState(state, normalized, { force: force || wasSyncPaused })) return;
   const prevLogLen = state?.log?.length ?? 0;
   const prevInitiative = state?.initiative;
+  // Which of this snapshot's bounded event history (see buildLastEvent/commitState) are actually
+  // new to this client, identified by id rather than by revision math — a revision gap no longer
+  // means "lost", since a skipped/coalesced Firebase delivery still carries every event still
+  // inside the bounded window, each still bearing its own never-yet-consumed id (GPT review,
+  // finding 2's "account for skipped/coalesced deliveries" requirement). Every id seen here gets
+  // marked consumed regardless of whether this delivery is a recovery snapshot — that's what
+  // stops a recovery snapshot's history from replaying later once real play resumes — but only
+  // played (below, after redraw) when it isn't.
+  const incomingHistory = Array.isArray(normalized._eventHistory) ? normalized._eventHistory : [];
+  const freshEvents = incomingHistory.filter(ev => ev?.id && !consumedEventIds.has(ev.id));
+  for (const ev of incomingHistory) markEventConsumed(ev.id);
   // Track tiles changed by the opponent so we can highlight them
   if (state?.board) {
     lastChangedKeys = new Set();
@@ -1163,9 +1578,55 @@ function receiveRemoteState(remoteState) {
       }
     }
   }
+  // Seeded from the real board as it stood right before this delivery — the starting point for
+  // computeDisplayFlags' progressive per-event simulation (see its own doc comment). Captured
+  // before `state = normalized` overwrites the authoritative board with this delivery's final
+  // truth, and threaded through every computeDisplayFlags call this delivery makes (both below
+  // and in the later-events loop further down), never mutated for any other purpose.
+  const simulatedBoard = { ...(state?.board ?? {}) };
   state = normalized;
+  // Sets up redraw()'s one-shot CSS flourish classes for the FIRST fresh event only — the common
+  // case (one event) shows its flourish on this same redraw, no artificial delay. Any further
+  // fresh events (a coalesced delivery catching up on more than one distinct event) get their own
+  // later, separately-timed redraw each — see the sequencing below, right after the main redraw.
+  // GPT review, finding 2 (2026-09-10): a single merged render could only ever show the LAST of
+  // several distinct events — two different Hero glows, or two conflicting flags on the same
+  // tile, silently lost all but one. Never merged now; each event gets its own full pass.
+  const [firstFreshEvent, ...laterFreshEvents] = isRecoveryDelivery ? [] : freshEvents;
+  if (firstFreshEvent) {
+    const flags = computeDisplayFlags(firstFreshEvent, simulatedBoard);
+    lastTransitionFlags = flags.transitionFlags;
+    lastObjectiveTransitionFlags = flags.objectiveTransitionFlags;
+    lastHeroActivationKey = flags.heroActivationKey;
+  } else {
+    lastTransitionFlags = new Map();
+    lastObjectiveTransitionFlags = new Map();
+    lastHeroActivationKey = null;
+  }
+  onlineSyncPaused = false;
+  if (!preserveSyncStatus) setOnlineSyncStatus();
   const newEntries = (normalized.log ?? []).slice(prevLogLen);
   if (newEntries.length) appendLog(newEntries);
+  // Found 2026-09-09: this reset list only ever covered a handful of pending-choice vars —
+  // Maneuver (command AND On-Play-Unit), Coordinated Strike, Rotate, and the FO/Field
+  // Reserves/Craft modals were never cleared here, and none of their modals were ever closed.
+  // A force-adopted conflicting state (pushStateIfOnline's conflict-recovery path) can land
+  // while any of those is open locally, with its paid Fuel/activation-lock spend possibly not
+  // even reflected in the state being adopted (that write is exactly what conflicted). Leaving
+  // the modal open would let the player submit it against state it no longer matches. Since
+  // these modals already never refund on cancel by design (their cost is spent before they
+  // open), closing them here without refunding is consistent, not a new inconsistency — the
+  // player just has to redo the interrupted choice instead of risking corrupted shared state.
+  const hadPendingChoice = uiState !== 'idle' || pendingCommandId !== null || selectedHeroZone !== null
+    || pendingUnitManeuverSource !== null || pendingCommandManeuverSource !== null
+    || pendingCoordStrikeFirst !== null || pendingRotation !== null || craftPickerRole !== null
+    || quartermasterRole !== null
+    || foCards.length > 0 || fieldReservesCards.length > 0 || anyBlockingModalOpen();
+  for (const id of BLOCKING_MODAL_IDS) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
+  clearPinnedTip(); // a modal just closed out from under the player — any pin it held is stale
   uiState = 'idle';
   syncArtyTargetingUiState(); // overrides 'idle' above if this client owes an Artillery Position hit
   syncObjectivePickUiState(); // overrides 'idle' above if this client owes an Objective pick
@@ -1173,14 +1634,53 @@ function receiveRemoteState(remoteState) {
   pendingAttackerKey = null;
   pendingCommandId = null;
   preCommandState = null;
-  attackedThisTurn = new Map();
+  pendingCommandManeuverSource = null;
+  pendingCommandManeuverRemaining = 0;
+  pendingCoordStrikeFirst = null;
+  pendingUnitManeuverSource = null;
+  pendingUnitManeuverPlacedKey = null;
+  pendingHeroManeuverSource = null;
+  pendingRotation = null;
+  foCards = [];
+  foAssignments = {};
+  foPlayer = '';
+  fieldReservesCards = [];
+  fieldReservesPlayer = null;
+  craftPickerRole = null;
+  quartermasterRole = null;
+  quartermasterCandidates = [];
   lastDATargetKey = null;
   selectedHeroZone = null;
   pendingHeroId = null;
   pendingHeroColumn = null;
   pendingHeroTargets = null;
-  pendingHalftrackMove = null;
+  if (hadPendingChoice) {
+    appendLog(['Connection recovered — an in-progress choice was interrupted and had to be redone.']);
+  }
   redraw();
+  // Never re-executes any gameplay effect to get here — freshEvents is purely display data that
+  // already rode along inside `normalized` itself (see buildLastEvent). The first fresh event's
+  // timer-based effects (popups/connectors/Direct HQ) fire now, matching the CSS flourish this
+  // same redraw just showed. Any further fresh events each get their OWN later redraw (re-setting
+  // the one-shot flourish inputs for just that event first) plus their own triggerEventEffects
+  // call — 600ms apart, comfortably above every flourish animation's duration (game.css:
+  // fx-flash-glow/fx-flash-inset/fx-destroy-shake all finish within 300-500ms), so a coalesced
+  // delivery catching up on more than one distinct event shows each as its own visible beat
+  // instead of only the last one surviving a single overlapping render.
+  if (firstFreshEvent) triggerEventEffects(firstFreshEvent, 0);
+  laterFreshEvents.forEach((ev, i) => {
+    setTimeout(() => {
+      // Same simulatedBoard object as the first event above — already advanced by its
+      // tileUnitSnapshot, so this event's own check (and any further advancement) continues the
+      // SAME per-delivery timeline rather than restarting from the final authoritative board.
+      const flags = computeDisplayFlags(ev, simulatedBoard);
+      lastTransitionFlags = flags.transitionFlags;
+      lastObjectiveTransitionFlags = flags.objectiveTransitionFlags;
+      lastHeroActivationKey = flags.heroActivationKey;
+      redraw();
+      triggerEventEffects(ev, 0);
+    }, (i + 1) * 600);
+  });
   checkWin();
   // The opponent's End Turn handler can't prompt us, so an inbound state that hands us the
   // turn is where this client runs its own Hero Phase. runHeroPhase re-checks lastObjLevel,
@@ -1278,10 +1778,10 @@ function applyHeroPower(s, role, col, hero, targetKey) {
   const opp = role === 'p1' ? 'p2' : 'p1';
 
   switch (hero.id) {
-    case 'H01': // Quartermaster General — draw 1
-      s = { ...s, [role]: drawCards(s[role], 1) };
-      log.push(`${hero.name}: draw 1 card`);
-      break;
+    // H01 Quartermaster General no longer resolves through here (2026-09 balance pass — "draw
+    // 1" replaced with "look at 3 random cards, choose 1"): like H25 Craft, it needs a picker
+    // modal, so it's special-cased directly in tryActivateHero (pay/lock, then
+    // showQuartermasterModal) instead of going through applyHeroPower's instant-effect path.
 
     case 'H07': // Armored Commander — next Tank in THIS COLUMN costs 3 less
       s = { ...s, [role]: addDiscount(s[role], { appliesTo: 'Tank', column: col, amount: 3, min: 0 }) };
@@ -1293,9 +1793,9 @@ function applyHeroPower(s, role, col, hero, targetKey) {
       log.push(`${hero.name}: next Command costs 2 less Fuel`);
       break;
 
-    case 'H17': // HQ Assault Commander — deal 1 damage to enemy HQ
-      s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 1 } };
-      log.push(`${hero.name}: 1 damage to ${opp.toUpperCase()}'s HQ`);
+    case 'H17': // HQ Assault Commander — deal 2 damage to enemy HQ (2026-09 balance pass: was 1)
+      s = { ...s, [opp]: { ...s[opp], hq: s[opp].hq - 2 } };
+      log.push(`${hero.name}: 2 damage to ${opp.toUpperCase()}'s HQ`);
       break;
 
     case 'H22': { // Frontline Marshal — ALL units in this column, friendly AND enemy, +2 permanent
@@ -1305,7 +1805,7 @@ function applyHeroPower(s, role, col, hero, targetKey) {
       for (const k of keys) {
         const u = newBoard[k];
         if (!u || u.state === 'destroyed') continue;
-        newBoard[k] = { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 2, sideBonusTurns: 99 };
+        newBoard[k] = { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 2 };
         count++;
       }
       s = { ...s, board: newBoard };
@@ -1318,7 +1818,7 @@ function applyHeroPower(s, role, col, hero, targetKey) {
       let count = 0;
       for (const [k, u] of Object.entries(newBoard)) {
         if (!u || u.owner !== role || u.state === 'destroyed') continue;
-        newBoard[k] = { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 };
+        newBoard[k] = { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 };
         count++;
       }
       s = { ...s, board: newBoard };
@@ -1349,7 +1849,7 @@ function applyHeroPower(s, role, col, hero, targetKey) {
     case 'H03': { // Tactical Commander — +1 all sides permanently
       const u = s.board[targetKey];
       log.push(`${hero.name}: ${nameOf(targetKey)} +1 all sides (permanent)`);
-      s = { ...s, board: { ...s.board, [targetKey]: { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 } } };
+      s = { ...s, board: { ...s.board, [targetKey]: { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 } } };
       break;
     }
 
@@ -1390,6 +1890,9 @@ function applyHeroPower(s, role, col, hero, targetKey) {
       const finalUnit = newUnit.state === 'destroyed' ? null : newUnit;
       s = { ...s, board: { ...s.board, [targetKey]: finalUnit }, [opp]: { ...s[opp], hq: s[opp].hq - hqDamage } };
       log.push(`${hero.name}: Hit ${beforeName} — ${finalUnit === null ? 'Destroyed' : newUnit.state}`);
+      const triggered = applyGameEvents(s, [unitSuppressedEvent(targetKey, before, finalUnit)]);
+      s = triggered.state;
+      log.push(...triggered.log);
       if (finalUnit === null) {
         const pd = applyPostDestructionEffects(s, { unitKey: targetKey, dyingUnit: before, sourceUnitKey: null });
         s = pd.state;
@@ -1476,6 +1979,32 @@ function tryActivateHero(role, col) {
   const targets = heroTargetKeys(state, role, col, hero);
 
   if (targets === null) { // instant — no target to pick
+    if (hero.id === 'H01') { // Quartermaster General — look at 3 random cards from the deck,
+      // choose 1 (2026-09 balance pass, replaces "draw 1"). Same pay/lock-then-modal shape as
+      // H25 Craft below. Blocked before spending anything if the deck is empty — there would be
+      // nothing to sample, the same "no valid target" reasoning other Heroes use (e.g. H05
+      // Recovery Officer's suppressed-unit check), even though H01 has no board target as such.
+      if (ps.deck.length === 0) {
+        appendLog([`${hero.name}: deck is empty — nothing to look at`]);
+        return true;
+      }
+      const candidates = sampleRandomFromDeck(ps.deck, 3);
+      const activatedBefore = ps.heroesActivatedThisTurn ?? [];
+      const paid = {
+        ...state,
+        [role]: {
+          ...spendCostMods(ps),
+          fuel: ps.fuel - cost,
+          heroesActivatedThisTurn: activatedBefore.includes(hero.id) ? activatedBefore : [...activatedBefore, hero.id],
+        },
+      };
+      // heroActivationKey here, at the pay/lock commit, same reasoning as H25 below — this is
+      // already the moment heroesActivatedThisTurn records the activation, and the later pick
+      // commit only moves the chosen card into hand, so the glow fires exactly once.
+      commitState(paid, costModLog, undefined, undefined, `${role}-${col}`);
+      showQuartermasterModal(role, candidates);
+      return true;
+    }
     if (hero.id === 'H25') { // Chief Aircraft Engineer — Craft: pay/lock now, resolve the
       // 3-candidate picker via modal (see showCraftPickerModal) rather than applyHeroPower.
       const activatedBefore = ps.heroesActivatedThisTurn ?? [];
@@ -1487,7 +2016,12 @@ function tryActivateHero(role, col) {
           heroesActivatedThisTurn: activatedBefore.includes(hero.id) ? activatedBefore : [...activatedBefore, hero.id],
         },
       };
-      commitState(paid, costModLog);
+      // heroActivationKey fires here, at the pay/lock commit — this is already the moment
+      // heroesActivatedThisTurn records the activation (above), and confirmCraftPick's later
+      // commit only adds the crafted card to hand, so tying the glow to this commit instead
+      // plays it exactly once (Found 2026-09-XX, GPT review: this commit previously omitted it
+      // entirely, so Craft activation never glowed on either client).
+      commitState(paid, costModLog, undefined, undefined, `${role}-${col}`);
       showCraftPickerModal(role);
       return true;
     }
@@ -1532,11 +2066,14 @@ function resolveHeroTargeting(clickedKey) {
   preCommandState = null;
   if (hero.id === 'H11') { // Field Coordinator — rotate, direction chosen via modal
     uiState = 'idle';
-    showRotateDirectionModal({ kind: 'hero', targetKey: clickedKey, cardName: hero.name, s: state, log: [], role, heroId: hero.id });
+    // col threaded through so confirmRotateDirection's final commit can pass heroActivationKey —
+    // pendingHeroColumn was already cleared above, so `col` (captured before that) is the only
+    // copy of it left by the time the modal resolves.
+    showRotateDirectionModal({ kind: 'hero', targetKey: clickedKey, cardName: hero.name, s: state, log: [], role, heroId: hero.id, col });
     return;
   }
   if (hero.id === 'H16') { // Maneuver Commander — this click picked the source unit; now pick a destination
-    pendingHeroManeuverSource = { key: clickedKey, role, hero };
+    pendingHeroManeuverSource = { key: clickedKey, role, hero, col };
     uiState = 'hero-maneuver-destination';
     appendLog([`${hero.name}: choose a destination tile for ${CARD_BY_ID[state.board[clickedKey]?.cardId]?.name ?? 'the unit'}`]);
     redraw();
@@ -1553,7 +2090,7 @@ function resolveHeroTargeting(clickedKey) {
 // Maneuver itself — see resetPersistentAttacks in state.js).
 function resolveHeroManeuverDestination(destKey) {
   if (!pendingHeroManeuverSource) return;
-  const { key: sourceKey, role, hero } = pendingHeroManeuverSource;
+  const { key: sourceKey, role, hero, col } = pendingHeroManeuverSource;
   const legalTargets = getManeuverTargets(state, sourceKey);
   if (!legalTargets.includes(destKey)) return;
   pendingHeroManeuverSource = null;
@@ -1566,7 +2103,9 @@ function resolveHeroManeuverDestination(destKey) {
     ...reset,
     [role]: { ...reset[role], heroesActivatedThisTurn: activatedBefore.includes(hero.id) ? activatedBefore : [...activatedBefore, hero.id] },
   };
-  commitState(next, [...log, `${hero.name}: attacks reset`]);
+  // Found 2026-09-XX (GPT review): this was the only resolution point for H16's activation and
+  // previously never passed heroActivationKey at all, so the glow never fired on either client.
+  commitState(next, [...log, `${hero.name}: attacks reset`], undefined, undefined, `${role}-${col}`);
   checkWin();
 }
 
@@ -1583,14 +2122,17 @@ let pendingUnitManeuverPlacedKey = null; // which just-placed Aircraft triggered
 let pendingUnitManeuverSource = null;    // { key } once the first pick (unit to move) is made
 
 // Candidates for the "1 other friendly Unit" pick: friendly, not the just-placed Unit itself,
-// state === 'normal' (a Suppressed Unit can't be Maneuvered — matches getCommandManeuverSources'
-// convention), AND pre-filtered to only those with at least 1 legal destination so the player
-// can never pick a source that leads to a dead end with nowhere to place it.
+// AND pre-filtered to only those with at least 1 legal destination so the player can never pick
+// a source that leads to a dead end with nowhere to place it. Suppression alone does not
+// disqualify a source — card text (A55/A56/A61-A63/A65) says only "1 other friendly Unit," no
+// unsuppressed/active-Unit wording, and Maneuver itself doesn't clear Suppressed (resolveManeuver
+// preserves state verbatim) — so a Suppressed Unit stays Suppressed after moving, exactly as any
+// other Maneuver source does.
 function getUnitOnPlayManeuverSources(excludeKey) {
   const active = state.initiative;
   return new Set(
     Object.entries(state.board)
-      .filter(([k, u]) => k !== excludeKey && u && u.owner === active && u.state === 'normal')
+      .filter(([k, u]) => k !== excludeKey && u && u.owner === active)
       .map(([k]) => k)
       .filter(k => getManeuverTargets(state, k).length > 0)
   );
@@ -1613,8 +2155,6 @@ function resolveUnitManeuverDestination(destKey) {
   const legalTargets = getManeuverTargets(state, sourceKey);
   if (!legalTargets.includes(destKey)) return;
   const placedKey = pendingUnitManeuverPlacedKey;
-  pendingUnitManeuverSource = null;
-  pendingUnitManeuverPlacedKey = null;
 
   let { state: s, log } = resolveManeuver(state, sourceKey, destKey);
   s = recalculateDynamicStats(s);
@@ -1634,6 +2174,14 @@ function resolveUnitManeuverDestination(destKey) {
   }
 
   const targets = getAttackableTargets(s, placedKey);
+  // Found 2026-09-09: this used to clear the pending-maneuver vars and advance uiState BEFORE
+  // checking whether commitState actually wrote anything — if sync was paused, the mandatory
+  // Maneuver would look resolved locally while the board mutation never reached shared state.
+  // Stay in the mandatory maneuver state (pendingUnitManeuverSource/PlacedKey left intact) so
+  // the player can simply retry once reconnected, instead of the choice silently vanishing.
+  if (!commitState(s, log)) return;
+  pendingUnitManeuverSource = null;
+  pendingUnitManeuverPlacedKey = null;
   if (targets.length > 0) {
     uiState = 'targeting';
     pendingAttackerKey = placedKey;
@@ -1641,14 +2189,13 @@ function resolveUnitManeuverDestination(destKey) {
     uiState = 'idle';
     pendingAttackerKey = null;
   }
-  commitState(s, log);
+  // commitState's own redraw() already fired above, but at that point uiState was still
+  // 'unit-maneuver-destination' — attack highlights/turn-readiness are computed from the
+  // uiState set just now, so without this the board keeps showing the completed choice's
+  // stale controls until some unrelated later action happens to redraw again.
+  redraw();
   checkWin();
 }
-
-// Mobile Command Halftrack (114) on-play: column index awaiting an optional Hero move into
-// its (confirmed-empty) zone, or null. Set at placement, cleared by a move, a click on the
-// target zone itself (skip), or any of the usual transient-state resets.
-let pendingHalftrackMove = null;
 
 // ── Hero Zone interaction — reposition ────────────────────────────────────────
 // One command-line action per turn: move a deployed Hero to an empty zone, OR swap two
@@ -1661,6 +2208,7 @@ let selectedHeroZone = null; // column index of the picked-up hero, or null
 // plain click is never a dead end.
 function handleHeroZoneClick(role, col, shiftKey = false) {
   if (gameOver || !state) return;
+  if (onlineSyncPaused) return;
   // Radio Interference (123) — the one case that targets an ENEMY Hero Zone, so it must be
   // checked before the "only on your own turn/heroes" guard below turns away that click.
   if (uiState === 'command-hero-targeting') {
@@ -1669,32 +2217,17 @@ function handleHeroZoneClick(role, col, shiftKey = false) {
     resolveEnemyHeroTargeting(role, col);
     return;
   }
-  // Mobile Command Halftrack (114) on-play: click one of your OTHER deployed Heroes to move
-  // it into pendingHalftrackMove's (empty) column, or click that column itself to skip.
-  if (pendingHalftrackMove != null) {
-    if (role !== state.initiative || (isOnline && myRole !== role)) return;
-    if (col === pendingHalftrackMove) { pendingHalftrackMove = null; appendLog(['Mobile Command Halftrack: skipped']); redraw(); return; }
-    const ps = state[role];
-    const zones = ps.heroZones ?? [null, null, null, null];
-    if (zones[col] == null) return; // nothing to move from an empty zone
-    const target = pendingHalftrackMove;
-    const next = [...zones];
-    const movedName = CARD_BY_ID[next[col]]?.name ?? 'Hero';
-    next[target] = next[col];
-    next[col] = null;
-    pendingHalftrackMove = null;
-    commitState(
-      { ...state, [role]: { ...ps, heroZones: next } },
-      [`Mobile Command Halftrack: ${movedName} moves to column ${target + 1}`],
-    );
-    return;
-  }
   if (state.initiative !== role) return;                 // only on your own turn
   if (isOnline && myRole !== role) return;               // and only your own heroes
-  if (uiState === 'hero-targeting') return;              // finish the current power first
   // Command Shuffle (C15): reuses this exact pick-up/drop flow, but must not activate a
   // power on pick-up and must not spend (or require) the normal Hero Phase reposition.
   const shuffleActive = pendingCommandId === 'C15';
+  // A picked-up Hero or Command Shuffle must be allowed to finish through this handler.
+  // Every other pending action owns the input until it resolves or is cancelled.
+  if (uiState !== 'idle' && !shuffleActive) return;
+  if (anyBlockingModalOpen()) return;
+  const continuingHeroMove = selectedHeroZone !== null || shuffleActive;
+  if (getInteractionDecision(currentInteractionContext()).pending && !continuingHeroMove) return;
   const ps = state[role];
   const zones = ps.heroZones ?? [null, null, null, null];
 
@@ -1731,7 +2264,11 @@ function handleHeroZoneClick(role, col, shiftKey = false) {
     afterMove = rs.state;
     msgs.push(...rs.log);
   }
-  commitState(afterMove, msgs);
+  // Found 2026-09-09: used to clear pendingCommandId/preCommandState unconditionally right
+  // after commitState — if sync was paused, the write silently no-op'd but Command Shuffle
+  // was marked done anyway, with no preCommandState left to refund it via Cancel. Only clear
+  // once the swap has actually reached shared state.
+  if (!commitState(afterMove, msgs)) return;
   if (shuffleActive) { pendingCommandId = null; preCommandState = null; checkWin(); }
 }
 
@@ -1757,12 +2294,16 @@ document.getElementById('p1-hand').addEventListener('click', e => {
   const card = CARD_BY_ID[cardId];
   if (!card) return;
 
-  if (selectedHandCardId === cardId) {
+  if (selectedHandCardId === cardId && uiState === 'placing') {
     selectedHandCardId = null;
     uiState = "idle";
     redraw();
     return;
   }
+
+  // Do not let a second card replace an attack, paid target selection, Hero choice, or other
+  // unresolved decision. The current action must finish (or use Cancel when allowed) first.
+  if (getInteractionDecision(currentInteractionContext()).pending) return;
 
   if (card.type === 'unit') {
     const active = state.initiative;
@@ -1845,6 +2386,8 @@ document.getElementById('board').addEventListener('click', e => {
     return;
   }
 
+  if (onlineSyncPaused) return;
+
   if (isOnline && state.initiative !== myRole) return;
 
   // ARTILLERY POSITION TARGETING
@@ -1864,11 +2407,10 @@ document.getElementById('board').addEventListener('click', e => {
     };
     const stateLabel = finalUnit === null ? 'Destroyed' : newUnit.state === 'suppressed' ? 'Suppressed' : 'armor absorbed';
     const log = [`Artillery Position: ${CARD_BY_ID[unit.cardId]?.name} → ${stateLabel}`];
-    if (newUnit.state === 'suppressed') {
-      const coGen = checkCounteroffensiveGeneral(newS, clickedKey);
-      newS = coGen.state;
-      log.push(...coGen.log);
-    } else if (finalUnit === null) {
+    const triggered = applyGameEvents(newS, [unitSuppressedEvent(clickedKey, unit, finalUnit)]);
+    newS = triggered.state;
+    log.push(...triggered.log);
+    if (finalUnit === null) {
       // Last Stand / Breakthrough (shared destruction chain) — no source Unit for
       // Breakthrough attribution since this Hit came from the Objective, not a Unit attack.
       const pd = applyPostDestructionEffects(newS, { unitKey: clickedKey, dyingUnit: unit, sourceUnitKey: null });
@@ -1934,21 +2476,11 @@ document.getElementById('board').addEventListener('click', e => {
     const idx = handAfter.indexOf(selectedHandCardId);
     if (idx !== -1) handAfter.splice(idx, 1);
 
-    const placedUnit = {
-      cardId: selectedHandCardId,
-      owner: active,
-      state: 'normal',
-      armorHits: 0,
-      tempKeywords: [],
-      grantedKeywords: [],
-      permanentKeywords: [],
-      tempSideBonus: 0,
-      justPlaced: true,
-      rotation: 0,
-    };
+    const created = createBoardUnit(state, selectedHandCardId, active);
+    const placedUnit = created.unit;
 
     let newState = {
-      ...state,
+      ...created.state,
       board: { ...state.board, [clickedKey]: placedUnit },
       [active]: consumeDiscounts(
         { ...state[active], fuel: state[active].fuel - effectiveCost, hand: handAfter },
@@ -2012,6 +2544,12 @@ document.getElementById('board').addEventListener('click', e => {
         selectedHandCardId = null;
         appendLog([`${card.name}: choose a friendly Unit to Maneuver`]);
         redraw();
+        // Direct push, bypassing commitState — audited (GPT review, finding 1): `state` here is
+        // built by spreading the state this handler started with, so its `_eventHistory` is
+        // whatever it already was; this branch never calls buildLastEvent, so nothing new is
+        // appended. Safe by construction under the id-based dedup in receiveRemoteState — any
+        // event riding along was already consumed when it first arrived. See buildLastEvent's
+        // doc comment for the full reasoning.
         pushStateIfOnline(state);
         return;
       }
@@ -2030,35 +2568,6 @@ document.getElementById('board').addEventListener('click', e => {
       state = afterHeroPassives;
     }
 
-    // Mobile Command Halftrack (114) — on-play, offers to move a Hero into this (empty)
-    // column. Needs UI state (which card.id checks can't set), so it stays here rather
-    // than in checkUnitOnPlayAbility.
-    if (card.id === 114) {
-      const zones = state[active].heroZones ?? [null, null, null, null];
-      const hasOtherHero = zones.some((z, i) => z != null && i !== c);
-      if (zones[c] == null && hasOtherHero) {
-        pendingHalftrackMove = c;
-        appendLog(['Mobile Command Halftrack: click one of your other Heroes to move it here (optional)']);
-      }
-    }
-
-    // Radio Operator (111) — on-play, if a friendly Hero is in this column, look at top 2.
-    if (card.id === 111) {
-      const zones = state[active].heroZones ?? [null, null, null, null];
-      if (zones[c] != null) {
-        const deck = state[active].deck;
-        if (deck.length >= 2) {
-          const drawn = deck.slice(0, 2);
-          state = { ...state, [active]: { ...state[active], deck: deck.slice(2) } };
-          showRadioOperatorModal(drawn, active);
-        } else if (deck.length === 1) {
-          appendLog(['Radio Operator: only 1 card left in deck — stays on top']);
-        } else {
-          appendLog(['Radio Operator: deck is empty']);
-        }
-      }
-    }
-
     selectedHandCardId = null;
 
     // Direct HQ (doc 01 §19) is evaluated once at end of turn (see the End Turn handler),
@@ -2075,6 +2584,9 @@ document.getElementById('board').addEventListener('click', e => {
     }
     redraw();
     checkWin();
+    // Direct push — same audited conclusion as the early-return branch above: no new event is
+    // generated on this path, so whatever `_eventHistory` `state` already carries rides along
+    // unchanged and safely (id-based dedup on the receiving end).
     pushStateIfOnline(state);
     return;
   }
@@ -2082,6 +2594,14 @@ document.getElementById('board').addEventListener('click', e => {
   // TARGETING
   if (uiState === "targeting") {
     if (!pendingAttackerKey) return;
+    const pendingAttacker = state.board[pendingAttackerKey];
+    if (!pendingAttacker || pendingAttacker.owner !== state.initiative || pendingAttacker.state !== 'normal' || remainingAttacks(pendingAttacker) <= 0) {
+      uiState = 'idle';
+      pendingAttackerKey = null;
+      lastDATargetKey = null;
+      redraw();
+      return;
+    }
     let targets = getAttackableTargets(state, pendingAttackerKey);
     // Double Attack: first hit target is always valid for the second hit (even if Guard forces other targets)
     if (lastDATargetKey && !targets.some(t => t.key === lastDATargetKey)) {
@@ -2135,16 +2655,16 @@ document.getElementById('board').addEventListener('click', e => {
 
     const attackerKey = pendingAttackerKey;
     const attackerUnit = rallyState.board[attackerKey];
-    attackedThisTurn.set(attackerKey, (attackedThisTurn.get(attackerKey) ?? 0) + 1);
-    const attackCount = attackedThisTurn.get(attackerKey);
     const isDoubleAttack = getKeywords(attackerUnit).includes('Double Attack');
+    const isFirstDoubleAttack = isDoubleAttack && (attackerUnit.persistentSpent ?? 0) === 0;
     if (newState.board[attackerKey]) {
       newState = { ...newState, board: { ...newState.board, [attackerKey]: spendAttack(newState.board[attackerKey]) } };
     }
+    const attacksLeft = newState.board[attackerKey] ? remainingAttacks(newState.board[attackerKey]) : 0;
 
     // Track first DA hit so second hit can always re-target it
-    if (isDoubleAttack && attackCount === 1) lastDATargetKey = clickedKey;
-    else if (!isDoubleAttack || attackCount >= 2) lastDATargetKey = null;
+    if (isFirstDoubleAttack) lastDATargetKey = clickedKey;
+    else lastDATargetKey = null;
 
     const postAttackTargets = getAttackableTargets({ ...rallyState, board: newBoard }, attackerKey);
 
@@ -2176,20 +2696,18 @@ document.getElementById('board').addEventListener('click', e => {
     }
     newState = recalculateDynamicStats(newState);
 
-    // Counteroffensive General (H06) — first friendly unit to get Suppressed this turn
-    let coGenLog = [];
-    if (newState.board[clickedKey]?.state === 'suppressed') {
-      const coGen = checkCounteroffensiveGeneral(newState, clickedKey);
-      newState = coGen.state;
-      coGenLog = coGen.log;
-    }
+    // Resolve ordered state-transition hooks (including every primary/Blast/Barrage
+    // UNIT_SUPPRESSED event) through one funnel.
+    const triggeredEvents = applyGameEvents(newState, result.events);
+    newState = triggeredEvents.state;
+    const eventLog = triggeredEvents.log;
 
     // Double Attack's 2nd hit: if a real target existed a moment ago (postAttackTargets,
     // computed above) but the 1st hit just removed it, the 2nd hit simply has nothing to do
     // right now — it stays available and converts via Direct HQ at end of turn if it's still
     // unused and still has no legal target then (doc 01 §19). No mid-turn conversion here
     // (removed 2026-08-31, Run 1) — see the End Turn handler for the actual Direct HQ sweep.
-    if (isDoubleAttack && attackCount < 2 && postAttackTargets.length > 0) {
+    if (attacksLeft > 0 && postAttackTargets.length > 0) {
       uiState = "targeting";
       pendingAttackerKey = attackerKey;
     } else {
@@ -2197,54 +2715,49 @@ document.getElementById('board').addEventListener('click', e => {
       pendingAttackerKey = null;
     }
 
-    // result.boardMutations always targets clickedKey — newUnit===null means destroyed,
-    // newUnit.state==='suppressed' means this hit just suppressed it, and newUnit.state
-    // still 'normal' (only possible on a hit that actually landed) means Armor/Heavy Armor
-    // absorbed it — applyHit (state.js) always either absorbs or transitions state, no third
-    // outcome, so 'normal' here is unambiguous.
+    // result.boardMutations covers the primary target (always clickedKey, first in the array)
+    // AND every Blast/Barrage secondary victim (any further entries, at their own keys) —
+    // newUnit===null means destroyed, newUnit.state==='suppressed' means this hit just
+    // suppressed it, and newUnit.state still 'normal' (only possible on a hit that actually
+    // landed) means Armor/Heavy Armor absorbed it — applyHit (state.js) always either absorbs or
+    // transitions state, no third outcome, so 'normal' here is unambiguous. Found 2026-09-XX (GPT
+    // review of 289b9cb): this used to read boardMutations[0] only, so secondary victims never
+    // got any suppression/destruction/Armor feedback — every mutation gets its own transition
+    // flag and popup now, primary and secondary alike, on both clients (popups is an
+    // event field, resolved on each client at consumption time — see triggerEventEffects).
     const transitionFlags = new Map();
-    if (result.boardMutations.length > 0) {
-      const { newUnit } = result.boardMutations[0];
+    const popups = [];
+    for (const { key, newUnit } of result.boardMutations) {
       if (newUnit === null) {
-        transitionFlags.set(clickedKey, 'destroyed');
-        // Name popup on the now-empty tile — the destroyed unit's own card, read from
-        // pre-mutation state (still the module-level `state`, not yet reassigned) since
-        // it's already gone from result.boardMutations by this point.
-        const destroyedName = CARD_BY_ID[state.board[clickedKey]?.cardId]?.name;
-        if (destroyedName) {
-          const rect = tile.getBoundingClientRect();
-          showFxPopup(rect.left + rect.width / 2, rect.top, `${destroyedName} destroyed`);
-        }
-      }
-      else if (newUnit.state === 'suppressed') transitionFlags.set(clickedKey, 'suppressed');
-      else if (newUnit.state === 'normal') {
-        transitionFlags.set(clickedKey, 'armor-absorbed');
-        const rect = tile.getBoundingClientRect();
-        showFxPopup(rect.left + rect.width / 2, rect.top, 'ARMOR ABSORBED');
+        transitionFlags.set(key, 'destroyed');
+        // Precomputed now, while `state` (pre-mutation, module-level) still has this unit — the
+        // popup carries the finished text rather than a key to re-derive later, since by the
+        // time this plays (immediately here, or after a redraw on the remote client) board[key]
+        // is already empty.
+        const destroyedName = CARD_BY_ID[state.board[key]?.cardId]?.name;
+        if (destroyedName) popups.push({ tileKey: key, text: `${destroyedName} destroyed` });
+      } else if (newUnit.state === 'suppressed') {
+        transitionFlags.set(key, 'suppressed');
+      } else if (newUnit.state === 'normal') {
+        transitionFlags.set(key, 'armor-absorbed');
+        popups.push({ tileKey: key, text: 'ARMOR ABSORBED' });
       }
     }
 
     // Causality pulse (Rally/Breakthrough): attacker glows now via transitionFlags (same
-    // render pass as everything else above); the affected target(s) flash ~150ms later via a
-    // direct DOM toggle, once the board has actually repainted with their new stats. Skip the
-    // attacker's own tile from the delayed list — Breakthrough's current effects all self-buff,
-    // so source and target are the same tile and a second flash on it would just be redundant.
+    // render pass as everything else above); the affected target(s) flash ~150ms later via
+    // triggerEventEffects, once the board has actually repainted with their new stats, on BOTH
+    // clients (connectors is an event field — this used to be a direct, local-only setTimeout
+    // here, so the opponent never saw the causality line at all). Skip the attacker's own tile
+    // from the delayed list — Breakthrough's current effects all self-buff, so source and target
+    // are the same tile and a second flash on it would just be redundant.
     if (causalityTargets.length > 0 && newState.board[attackerKey]?.state !== 'destroyed') {
       transitionFlags.set(attackerKey, 'causality-source');
     }
     const delayedCausalityTargets = causalityTargets.filter(k => k !== attackerKey);
-    if (delayedCausalityTargets.length > 0) {
-      setTimeout(() => {
-        const sourceEl = document.querySelector(`.tile[data-key="${attackerKey}"] .board-card`);
-        delayedCausalityTargets.forEach(k => {
-          flashCausalityTarget(k);
-          const targetEl = document.querySelector(`.tile[data-key="${k}"] .board-card`);
-          if (sourceEl) drawFxConnector(sourceEl, targetEl);
-        });
-      }, 150);
-    }
+    const connectors = delayedCausalityTargets.map(k => ({ fromKey: attackerKey, toKey: k }));
 
-    commitState(newState, [...rallyLog, ...result.logEntries, ...overrunLog, ...postDestroyLog, ...coGenLog], transitionFlags);
+    commitState(newState, [...rallyLog, ...result.logEntries, ...overrunLog, ...postDestroyLog, ...eventLog], transitionFlags, undefined, undefined, undefined, popups, connectors);
     checkWin();
     return;
   }
@@ -2302,13 +2815,18 @@ document.getElementById('board').addEventListener('click', e => {
 
   // IDLE: select a friendly unit to attack
   if (uiState === "idle") {
+    // Found 2026-09-09: this branch used to be the one action-start path that didn't check the
+    // shared interaction gate, so a pending-but-non-mandatory action (e.g. Command Shuffle
+    // between pick-up and drop, uiState stays 'idle' the whole time) let an attack start and
+    // finish underneath it — Cancel would then revert to preCommandState and silently wipe
+    // that attack's results. Every other action-start handler already gates on this.
+    if (getInteractionDecision(currentInteractionContext()).pending) return;
     const unit = state.board[clickedKey];
     if (!unit) return;
     const active = state.initiative;
     if (unit.owner !== active) return;
     if (unit.state !== "normal") return;
-    const maxAttacks = getKeywords(unit).includes('Double Attack') ? 2 : 1;
-    if ((attackedThisTurn.get(clickedKey) ?? 0) >= maxAttacks) return;
+    if (remainingAttacks(unit) <= 0) return;
 
     const targets = getAttackableTargets(state, clickedKey);
     if (targets.length === 0) {
@@ -2367,10 +2885,9 @@ function objectivePickPrompt(objName, instruction) {
 }
 
 // Single source of truth for each pick effect's step-1 instruction wording, shared between the
-// log line pushed when the pick opens (applyObjectiveEffects, below) and the persistent
-// #mode-banner shown while uiState === 'objective-picking' (redraw()) — the log alone wasn't
-// prominent enough (buried in a scrolling panel) for a player to notice what they're supposed
-// to click.
+// log line pushed when the pick opens (applyObjectiveEffects, below) and Objective-picking's
+// entry in the persistent action guide (redraw()). Objective instructions are dynamic while
+// the other interaction modes use getInteractionGuide's fixed wording.
 const OBJECTIVE_PICK_INSTRUCTIONS = {
   maneuver: 'choose a friendly Unit to Maneuver',
   removeSuppression: 'choose a Suppressed friendly Unit to un-suppress',
@@ -2542,7 +3059,7 @@ function applyObjectiveEffects(s, player, resumeAfterKey = null) {
           let board = s.board;
           for (const ak of picks) {
             const u = board[ak];
-            board = { ...board, [ak]: { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 } };
+            board = { ...board, [ak]: { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 } };
           }
           s = { ...s, board };
           if (picks.length) log.push(`${nm} L3: ${picks.length} adjacent Infantry +1 all sides (permanent)`);
@@ -2782,7 +3299,7 @@ function playInstantCommand(cardId) {
       let count = 0;
       for (const [k, u] of Object.entries(newBoard)) {
         if (!u || u.state === 'destroyed') continue;
-        newBoard[k] = { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 };
+        newBoard[k] = { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 };
         count++;
       }
       s = { ...s, board: newBoard };
@@ -2818,7 +3335,7 @@ function playInstantCommand(cardId) {
       for (const [k, u] of Object.entries(newBoard)) {
         if (!u || u.owner !== active || u.state === 'destroyed') continue;
         if (CARD_BY_ID[u.cardId]?.cls !== 'Infantry') continue;
-        newBoard[k] = { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + amount, sideBonusTurns: 99 };
+        newBoard[k] = { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + amount };
         count++;
       }
       s = { ...s, board: newBoard, [active]: markEscalateUse(s[active], card.name) };
@@ -2956,13 +3473,16 @@ const COMMAND_MANEUVER_SOURCE_FILTER = {
   C35: (u) => CARD_BY_ID[u.cardId]?.cls === 'Aircraft',          // Scramble — friendly Aircraft
 };
 
+// Suppression alone does not disqualify a source — none of C21/C27/C35's card text requires an
+// unsuppressed/active Unit, and Maneuver doesn't clear Suppressed (resolveManeuver preserves
+// state verbatim), so a Suppressed Unit stays Suppressed after being Maneuvered by these too.
 function getCommandManeuverSources(commandId, excludeKey = null) {
   const active = state.initiative;
   const filterFn = COMMAND_MANEUVER_SOURCE_FILTER[commandId];
   if (!filterFn) return null;
   return new Set(
     Object.entries(state.board)
-      .filter(([k, u]) => k !== excludeKey && u && u.owner === active && u.state === 'normal' && filterFn(u))
+      .filter(([k, u]) => k !== excludeKey && u && u.owner === active && filterFn(u))
       .map(([k]) => k)
   );
 }
@@ -3212,36 +3732,6 @@ function resolveEnemyHeroTargeting(role, col) {
   commitState(s, [`Radio Interference: ${heroName}'s Power costs +1F during ${role.toUpperCase()}'s next turn`]);
 }
 
-// Shared by Air Strike (20) and Suppressing Fire (79): 1 hit on targetKey per friendly unit
-// of the given class currently on board. Returns the updated state, log lines, and whether
-// the target became Suppressed (so the caller can check Counteroffensive General).
-function applyClassCountHits(s, active, targetKey, unit, cls, cardName) {
-  const log = [];
-  const count = unitsOnBoard(s, active).filter(({ unit: u }) => CARD_BY_ID[u.cardId]?.cls === cls).length;
-  if (count === 0) {
-    log.push(`${cardName}: no friendly ${cls} on board`);
-    return { state: s, log, becameSuppressed: false };
-  }
-  const unitName = CARD_BY_ID[unit?.cardId]?.name ?? '?';
-  let tgt = unit; let dmg = 0; let becameSuppressed = false;
-  for (let i = 0; i < count && tgt; i++) {
-    const { newUnit, hqDamage } = applyHit(tgt);
-    dmg += hqDamage;
-    if (newUnit.state === 'suppressed') becameSuppressed = true;
-    tgt = newUnit?.state === 'destroyed' ? null : newUnit;
-  }
-  s = { ...s, board: { ...s.board, [targetKey]: tgt },
-        [unit.owner]: { ...s[unit.owner], hq: s[unit.owner].hq - dmg } };
-  log.push(`${cardName}: ${count} hit(s) on ${unitName} — ${dmg} HQ damage`);
-  if (tgt === null) {
-    const pd = applyPostDestructionEffects(s, { unitKey: targetKey, dyingUnit: unit, sourceUnitKey: null });
-    s = pd.state;
-    log.push(...pd.log);
-  }
-  s = recalculateDynamicStats(s);
-  return { state: s, log, becameSuppressed };
-}
-
 // Apply the effect of a targeted command to the clicked tile.
 function applyCommandEffect(commandId, targetKey) {
   const active = state.initiative;
@@ -3257,7 +3747,7 @@ function applyCommandEffect(commandId, targetKey) {
     const newBoard = { ...s.board };
     for (const k of targets) {
       const u = newBoard[k];
-      newBoard[k] = { ...u, grantedSideBonus: (u.grantedSideBonus || 0) + 1, sideBonusTurns: 99 };
+      newBoard[k] = { ...u, permanentSideBonus: (u.permanentSideBonus || 0) + 1 };
     }
     s = { ...s, board: newBoard };
     log.push(`${card.name}: ${targets.length} friendly Unit(s) adjacent to the Objective +1 all sides (permanent)`);
@@ -3361,7 +3851,7 @@ function applyCommandEffect(commandId, targetKey) {
     }
     case 'C24': { // Suppressing Fire (Infantry) — +1 all sides permanently (simple stat buff —
       // NOT the old multi-hit "1 hit per friendly Infantry" mechanic despite the shared name)
-      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, grantedSideBonus: (unit.grantedSideBonus || 0) + 1, sideBonusTurns: 99 } } };
+      s = { ...s, board: { ...s.board, [targetKey]: { ...unit, permanentSideBonus: (unit.permanentSideBonus || 0) + 1 } } };
       log.push(`${card.name}: ${unitName} +1 all sides (permanent)`);
       break;
     }
@@ -3449,6 +3939,7 @@ function applyCommandEffect(commandId, targetKey) {
 document.getElementById('btn-end-turn').addEventListener('click', () => {
   if (gameOver || !state) return;
   if (isOnline && state.initiative !== myRole) return;
+  if (getInteractionDecision(currentInteractionContext()).pending) return;
 
   const currentPlayer = state.initiative;
 
@@ -3505,37 +3996,11 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
     }
   }
 
-  // Supply Runner ability: at start of turn, if on a controlled objective → +1 Fuel
-  const supplyLog = [];
-  for (const { key: bk, unit: u } of unitsOnBoard(newState, newActive)) {
-    if (CARD_BY_ID[u.cardId]?.id !== 5) continue;
-    if (getAdjacentKeys(bk).some(k => newState.objectives[k]?.controller === newActive)) {
-      newState = { ...newState, [newActive]: gainFuel(newState[newActive], 1, false) };
-      supplyLog.push(`Supply Runner: controlled objective → +1 Fuel`);
-    }
-  }
-
-  // Quartermaster ability: at start of turn, if you control every objective on the map → draw 1.
-  // Wording was "both objectives" until 2026-08-19 — accurate back when every map had exactly
-  // 2 slots; now objectiveSlots varies 1-4 per map (see maps.js), so this checks ALL objectives
-  // currently placed, whatever the count, same as it always has (objs.every(...) was never
-  // hardcoded to 2 — only the card text and this log line's wording were).
-  for (const { unit: u } of unitsOnBoard(newState, newActive)) {
-    if (CARD_BY_ID[u.cardId]?.id !== 69) continue;
-    const objs = Object.values(newState.objectives);
-    const controlsAll = objs.length > 0 && objs.every(o => o.controller === newActive);
-    if (controlsAll) {
-      newState = { ...newState, [newActive]: drawCards(newState[newActive], 1) };
-      supplyLog.push(`Quartermaster: controls every objective on the map → draw 1`);
-    }
-  }
-
   const { state: afterEffects, log: effectLog, pendingArtyHits, pendingPick } = applyObjectiveEffects(newState, newActive, null);
   // Synced onto state (not just a local variable) so the controlling player's own client — not just
   // whoever clicked End Turn — knows to enter arty-targeting mode. See syncArtyTargetingUiState().
   newState = { ...afterEffects, pendingArtyHits, pendingObjectivePick: pendingPick };
 
-  attackedThisTurn = new Map();
   lastDATargetKey = null;
   uiState = 'idle';
   selectedHandCardId = null;
@@ -3547,32 +4012,20 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
   pendingHeroTargets = null;
 
   const newRound = Math.ceil(newState.turn / 2);
-  const turnLog = [...directHQLog, `--- Round ${newRound} — ${newState.initiative.toUpperCase()} ---`, ...supplyLog, ...effectLog];
+  const turnLog = [...directHQLog, `--- Round ${newRound} — ${newState.initiative.toUpperCase()} ---`, ...effectLog];
   // Direct HQ source-unit pulse — set on the exact keys evaluateDirectHQ reports converted
   // this sweep, so it plays on the very next render alongside everything else this commit
-  // already redraws (same transitionFlags mechanism as Suppressed/Destroyed).
+  // already redraws (same transitionFlags mechanism as Suppressed/Destroyed). The HQ-side
+  // result flash/popup and the source->HQ connector line (both timer-based, deliberately a beat
+  // after the source pulse so SOURCE -> RESULT reads as a brief sequence) now live in
+  // triggerEventEffects, called once here and once on the opponent's client for this same event
+  // via receiveRemoteState — previously they were local setTimeout calls only the acting client
+  // ever saw. Not the full SequenceQueue from the plan (explicitly deferred) — just enough
+  // timing to feel like two steps, layered over the existing synchronous resolution.
   const directHQFlags = new Map();
   directHQ.sources.forEach(({ key }) => directHQFlags.set(key, 'direct-hq'));
-  commitState(newState, turnLog, directHQFlags, objectiveTransitionFlags);
+  commitState(newState, turnLog, directHQFlags, objectiveTransitionFlags, null, { p1: directHQ.hqDamageToP1, p2: directHQ.hqDamageToP2 });
   checkWin();
-  // HQ-side result flash/popup — deliberately a beat after the source pulse above (which
-  // plays immediately on this same commit) rather than simultaneous, so SOURCE → RESULT
-  // reads as a brief sequence instead of everything flashing at once. Not the full
-  // SequenceQueue from the plan (explicitly deferred) — just enough timing to feel like two
-  // steps, layered over the existing synchronous resolution.
-  if (directHQ.hqDamageToP1 > 0) setTimeout(() => flashDirectHit('p1', directHQ.hqDamageToP1), 200);
-  if (directHQ.hqDamageToP2 > 0) setTimeout(() => flashDirectHit('p2', directHQ.hqDamageToP2), 200);
-  // One connector line per converting unit, timed to the same 200ms mark as the HQ flash above
-  // — draws "this unit's unused attack" straight to "this HQ damage", the one causality
-  // pairing on the board that's genuinely hard to follow from timing alone (source and result
-  // sit on opposite ends of the screen).
-  directHQ.sources.forEach(({ key, targetPlayer }) => {
-    setTimeout(() => {
-      const fromEl = document.querySelector(`.tile[data-key="${key}"] .board-card`);
-      const toEl = document.getElementById(`${targetPlayer}-hq`);
-      if (fromEl && toEl) drawFxConnector(fromEl, toEl);
-    }, 200);
-  });
 
   // Local hotseat only — both players share this screen, so flash whose turn it now is.
   // Online is handled separately in receiveRemoteState (fires on the receiving client only).
@@ -3595,13 +4048,29 @@ document.getElementById('btn-end-turn').addEventListener('click', () => {
 // ── Cancel ────────────────────────────────────────────────────────────────────
 
 document.getElementById('btn-cancel').addEventListener('click', () => {
+  if (!canCancelInteraction(currentInteractionContext())) return;
   // Rally Cry / Hold Position: once the first unit is picked and committed, "Cancel" during
   // the second pick means "stop here" (keep the first pick) — not a full revert of the cast.
   const rallyCryAlreadyPicked = ((pendingCommandId === 'C03' || pendingCommandId === 'C10') && pendingRallyCryCount < 2)
     || (pendingCommandId === 'C32' && pendingRallyCryCount === 1);
   if (preCommandState && !rallyCryAlreadyPicked) {
-    state = preCommandState;
+    // Found 2026-09-09: reverting to preCommandState's CONTENT is right, but it also carries
+    // preCommandState's stale (pre-Fuel-spend) _revision. Pushing that as-is would make this
+    // write target the wrong expectedRevision (the Fuel-spend commit already advanced the
+    // server past it) and get rejected as a conflict — which force-adopts the server's stale,
+    // Fuel-spent state right back, undoing the very cancel this is supposed to push. Carry the
+    // CURRENT revision forward onto the reverted content so this write correctly supersedes
+    // the commit it's cancelling, both locally and online.
+    const currentRevision = state?._revision;
+    state = Number.isSafeInteger(currentRevision) ? { ...preCommandState, _revision: currentRevision } : preCommandState;
     preCommandState = null;
+    // Audited (GPT review, finding 1): preCommandState is always a prior snapshot of this same
+    // client's own `state`, captured before the interaction being cancelled began — its
+    // `_eventHistory` is therefore always a prefix of (or identical to) what's already been
+    // pushed and consumed, never something new. Restoring it can only repeat already-consumed
+    // ids, which the receiver's id-based dedup already treats as a no-op. See buildLastEvent's
+    // doc comment.
+    pushStateIfOnline(state);
   }
   pendingCommandManeuverSource = null;
   pendingHeroManeuverSource = null;
@@ -3615,7 +4084,6 @@ document.getElementById('btn-cancel').addEventListener('click', () => {
   pendingHeroId = null;
   pendingHeroColumn = null;
   pendingHeroTargets = null;
-  pendingHalftrackMove = null;
   selectedHandCardId = null;
   pendingAttackerKey = null;
   pendingCommandId = null;
@@ -3730,7 +4198,7 @@ function showBoardUnitPreview(unitKey) {
   // Everything else that currently feeds getSideValue's total but isn't individually
   // attributed yet — kept as one honest catch-all so the listed amounts never silently
   // undercount the real total shown in cp-dirs above.
-  const otherTotal = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.objSideBonus || 0);
+  const otherTotal = (unit.tempSideBonus || 0) + (unit.grantedSideBonus || 0) + (unit.permanentSideBonus || 0) + (unit.objSideBonus || 0);
   if (otherTotal !== 0) {
     const sign = otherTotal > 0 ? '+' : '';
     rows.push([otherTotal > 0 ? 'positive' : 'negative', otherTotal > 0 ? '▲' : '▼', `${sign}${otherTotal} all sides — other effects (Command/Hero Power/Objective)`]);
@@ -3762,25 +4230,19 @@ function showAttackPreview(attackerKey, targetKey) {
   const hits = attackBeats(attUnit, dir, defUnit);
   const attCard = CARD_BY_ID[attUnit.cardId];
   const defCard = CARD_BY_ID[defUnit.cardId];
-  let outcome;
-  if (!hits) {
-    outcome = 'Attack blocked — no effect';
-  } else {
-    const armor = maxArmorHits(defUnit);
-    if (defUnit.armorHits < armor) outcome = 'Armor absorbs — no HQ damage';
-    else if (defUnit.state === 'normal') outcome = 'Suppressed — 1 HQ damage to defender';
-    else outcome = 'Destroyed — 2 HQ damage to defender';
-  }
+  const preview = describeAttackOutcome(defUnit, hits, {
+    overrun: Boolean(state[state.initiative]?.overrun),
+  });
   const badge = document.getElementById('cp-badge');
   document.getElementById('cp-name').textContent = `${attCard?.name ?? '?'} → ${defCard?.name ?? '?'}`;
-  badge.textContent = hits ? 'HIT' : 'BLOCKED';
+  badge.textContent = preview.badge;
   badge.className = `cp-badge ${hits ? 'hit' : 'block'}`;
   document.getElementById('cp-dirs').innerHTML =
     `<div class="cp-dir-row"><span class="cp-dl">${dir.toUpperCase()}</span><span class="cp-dv">${attVal}</span></div>` +
     `<div class="cp-dir-row"><span class="cp-dl">${oppDir.toUpperCase()}</span><span class="cp-dv">${defVal}</span></div>`;
   document.getElementById('cp-keyword').textContent = '';
   document.getElementById('cp-effects').innerHTML = '';
-  document.getElementById('cp-effect').textContent = outcome;
+  document.getElementById('cp-effect').textContent = preview.outcome;
   document.getElementById('card-preview').style.display = 'flex';
   document.getElementById('preview-hint').style.display = 'none';
 }
@@ -3815,9 +4277,8 @@ function showObjectivePreview(tileKey) {
   document.getElementById('preview-hint').style.display = 'none';
 }
 
-// Missions retired for v0.4 (2026-07-30, see cards.js header) — the dead
-// playMissionCard/checkActiveMissions/evalMissionCondition/applyMissionReward functions and
-// their call sites were removed from this file in the 2026-08 code-optimization pass.
+// Missions retired for v0.4 (2026-07-30, see cards.js header). Their definitions and old
+// implementation remain recoverable in the archive/Git history; no live card can reach them.
 
 // Hand hover → card preview
 document.getElementById('p1-hand').addEventListener('mouseover', e => {
@@ -3851,38 +4312,147 @@ for (const role of ['p1', 'p2']) {
 }
 
 // ── Floating tooltip — [data-tip]/[data-tip-html] elements (ability icons on hand/board
-// cards, Hero powers, Objective tiles) — delegated at the document level so it works for
-// every card/tile everywhere without each one's own overflow:hidden (or, for the board,
+// cards, affordability hints, Hero powers, Objective tiles) — delegated at the document level
+// so it works for every card/tile everywhere without each one's own overflow:hidden (or, for the board,
 // fitBoardArea's transform: scale()) clipping or shrinking it (see .floating-tip comment
 // in game.css). data-tip is plain text; data-tip-html allows richer markup (Objective
 // tiles' name/controller/level breakdown).
-{
-  const tip = document.getElementById('floating-tip');
-  document.addEventListener('mouseover', e => {
-    const pip = e.target.closest('[data-tip], [data-tip-html]');
-    if (!pip) return;
-    if (pip.dataset.tipHtml) tip.innerHTML = pip.dataset.tipHtml;
-    else tip.textContent = pip.dataset.tip;
-    tip.style.display = 'block';
-    const r = pip.getBoundingClientRect();
-    const tipRect = tip.getBoundingClientRect();
-    // Prefer opening above the pip; flip below if that would go off the top of the screen.
-    let top = r.top - tipRect.height - 6;
-    if (top < 4) top = r.bottom + 6;
-    // Anchor right-aligned to the pip, clamped so it never runs off either screen edge.
-    let left = r.right - tipRect.width;
-    left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
-    tip.style.top = `${top}px`;
-    tip.style.left = `${left}px`;
-  });
-  document.addEventListener('mouseout', e => {
-    if (e.target.closest('[data-tip], [data-tip-html]')) tip.style.display = 'none';
-  });
+//
+// Found 2026-09-XX (GPT review of 289b9cb): pinnedPip only ever cleared when the SAME pip was
+// clicked again — but selecting a card, confirming/cancelling a modal, or a Mulligan/Craft
+// re-render (renderMulliganCards rebuilds `#mulligan-hand` on every selection toggle, the Craft
+// picker rebuilds `#craft-picker-cards` on every open) can all remove the pinned pip's DOM node
+// or hide its modal while the pin variable itself stays set. Once that happens, mouseout's
+// `if (pinnedPip) return` guard permanently blocks hover-driven dismissal for every OTHER tip
+// too, since it never checks whether the pin it's respecting still points at anything real.
+// clearPinnedTip is now called from every place a pin could go stale: outside clicks, Escape,
+// every card-choice modal's confirm/cancel path, and a MutationObserver as a generic backstop
+// for any DOM-rebuild case not covered by an explicit call (belt-and-suspenders — the explicit
+// calls are what make "clear on modal close" true even when the modal only hides itself without
+// touching the pip's DOM node at all).
+const tip = document.getElementById('floating-tip');
+let pinnedPip = null; // set while a [data-tip-tap] toggle (not hover) is holding the tip open
+
+function positionTip(pip) {
+  if (pip.dataset.tipHtml) tip.innerHTML = pip.dataset.tipHtml;
+  else tip.textContent = pip.dataset.tip;
+  tip.style.display = 'block';
+  const r = pip.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+  // Prefer opening above the pip; flip below if that would go off the top of the screen.
+  let top = r.top - tipRect.height - 6;
+  if (top < 4) top = r.bottom + 6;
+  // Anchor right-aligned to the pip, clamped so it never runs off either screen edge.
+  let left = r.right - tipRect.width;
+  left = Math.max(4, Math.min(left, window.innerWidth - tipRect.width - 4));
+  tip.style.top = `${top}px`;
+  tip.style.left = `${left}px`;
 }
+
+function clearPinnedTip() {
+  if (!pinnedPip) return;
+  pinnedPip = null;
+  tip.style.display = 'none';
+}
+
+// Generic backstop: whenever the DOM changes anywhere under body (a card re-render, a modal's
+// contents being rebuilt), check whether the currently-pinned pip is still attached. Catches
+// every rebuild case without needing an explicit clearPinnedTip() call at each one — the
+// explicit calls below (confirm/cancel handlers) still exist for the equally-real case of a
+// modal that merely hides itself (style.display = 'none') without removing the pip node at all.
+new MutationObserver(() => {
+  if (pinnedPip && !document.body.contains(pinnedPip)) clearPinnedTip();
+}).observe(document.body, { childList: true, subtree: true });
+
+document.addEventListener('mouseover', e => {
+  const pip = e.target.closest('[data-tip], [data-tip-html]');
+  // Hovering a DIFFERENT pip while one is pinned is allowed to show — this is deliberately not
+  // blocked, since seeing a second pip's info without losing the pin is useful — but see mouseout
+  // below, which is what previously left this temporary content stuck once the pin's own guard
+  // started swallowing every future mouseout.
+  if (pip) positionTip(pip);
+});
+document.addEventListener('mouseout', e => {
+  if (pinnedPip) {
+    // GPT review, finding 4 (2026-09-10): mouseover above always repaints the tip with whatever
+    // was just hovered, pinned or not — hovering a second pip while one is pinned overwrote the
+    // pinned pip's own text/position. This guard then unconditionally kept the tip open on the
+    // way back out, so it was left showing that OTHER pip's now-stale content, attributed to
+    // nothing the player actually still has hovered or pinned. Restore the pin's own content
+    // when leaving anything that isn't the pinned pip itself — leaving the pinned pip needs no
+    // action, it's already showing the right thing.
+    const leavingPip = e.target.closest('[data-tip], [data-tip-html]');
+    if (leavingPip && leavingPip !== pinnedPip) positionTip(pinnedPip);
+    return;
+  }
+  if (e.target.closest('[data-tip], [data-tip-html]')) tip.style.display = 'none';
+});
+
+// Keyboard accessibility: Tab-focusing a [data-tip-tap] pip (see buildUnitCardInnerHtml,
+// ui.js) shows the same tip a hover would, so a keyboard-only player can inspect a card-choice
+// screen's full rules text too. focusin/focusout are the bubbling equivalents of focus/blur,
+// needed since this listener is delegated at the document level like the others here.
+document.addEventListener('focusin', e => {
+  const pip = e.target.closest('[data-tip-tap]');
+  if (pip) positionTip(pip);
+});
+document.addEventListener('focusout', e => {
+  if (e.target.closest('[data-tip-tap]') && pinnedPip !== e.target) tip.style.display = 'none';
+});
+
+// Enter/Space activation for [data-tip-tap] pips presented as buttons (role="button"
+// tabindex="0" — see buildUnitCardInnerHtml) — a <span> doesn't get native Enter/Space
+// activation the way a real <button> does, so a keyboard-only player tabbing to one otherwise
+// has no way to pin it open. Same toggle logic as the click handler below, and same
+// preventDefault reasoning (Space's default is to scroll the page).
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const pip = document.activeElement?.closest?.('[data-tip-tap]');
+  if (!pip) return;
+  e.preventDefault();
+  if (pinnedPip === pip) clearPinnedTip();
+  else { pinnedPip = pip; positionTip(pip); }
+});
+
+// Escape dismisses a pinned tip first, and only that — stopImmediatePropagation keeps this from
+// also falling through to the global Escape-to-Cancel handler (Keyboard shortcuts, below), which
+// would otherwise cancel a real in-progress interaction (e.g. a targeted attack) as a side effect
+// of a player just trying to close a tooltip. No effect when nothing is pinned.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !pinnedPip) return;
+  clearPinnedTip();
+  e.stopImmediatePropagation();
+});
+
+// Tap/click accessibility for card-choice screens (Mulligan/Forward Observer/Field
+// Reserves/Craft): [data-tip-tap] is opt-in (see buildUnitCardInnerHtml) — only the info
+// pips on those screens carry it, never the normal hand or board cards, so this never
+// changes existing placement/attack/select click behavior anywhere else. stopPropagation
+// keeps the tap from also bubbling into the card's own select/confirm handler underneath it —
+// a touch user can inspect a candidate without that same tap committing to it.
+document.addEventListener('click', e => {
+  const pip = e.target.closest('[data-tip-tap]');
+  if (!pip) {
+    // Outside click (anywhere that isn't a tip-tap pip itself, including the tip's own text)
+    // dismisses a pinned tip but otherwise falls through untouched — ordinary hand/board clicks
+    // (selecting a card, placing a unit) behave exactly as before, just with a stale pin no
+    // longer suppressing the NEXT hover's dismissal (see mouseout above).
+    if (!e.target.closest('#floating-tip')) clearPinnedTip();
+    return;
+  }
+  e.stopPropagation();
+  e.preventDefault();
+  if (pinnedPip === pip) {
+    clearPinnedTip();
+  } else {
+    pinnedPip = pip;
+    positionTip(pip);
+  }
+}, true); // capture phase — must run before the card's own click handler in normal bubbling
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 
-// These 6 "pick one of N" modals (Forward Observer, Radio Operator, Field Reserves, rotate
+// These 5 "pick one of N" modals (Forward Observer, Field Reserves, rotate
 // direction, Craft, Hero deploy) all commit their Fuel/cost/activation-lock BEFORE opening —
 // by design, none of them refund on cancel (see e.g. confirmCraftPick's own doc comment) — and
 // none has an external close path, only their own confirm handler. Found 2026-09-02: Escape
@@ -3892,14 +4462,6 @@ for (const role of ['p1', 'p2']) {
 // already paid with no way forward except completing the very modal they thought they'd
 // cancelled. "E" (end turn) has the same bypass risk (a raw .click() call ignores that the
 // button is visually obscured), so it's guarded here too.
-const MODAL_IDS_BLOCKING_SHORTCUTS = [
-  'fo-modal', 'radio-op-modal', 'field-reserves-modal',
-  'rotate-direction-modal', 'craft-picker-modal', 'hero-deploy-modal',
-];
-function anyBlockingModalOpen() {
-  return MODAL_IDS_BLOCKING_SHORTCUTS.some(id => document.getElementById(id)?.style.display === 'flex');
-}
-
 document.addEventListener('keydown', e => {
   if (gameOver || !state) return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -3969,20 +4531,23 @@ if (isOnline && myRole === 'p2') {
   });
 }
 
-// ── Shared deck-look card preview (Forward Observer, Radio Operator, Field Reserves) ──
-// Read-only card face — same markup renderHand uses for a unit/command/mission hand card,
-// but built directly (these modals show cards that are NOT in hand yet, mid-choice).
+// ── Shared deck-look card preview (Mulligan, Forward Observer, Field Reserves, Craft) ──────
+// Read-only card face — same markup renderHand uses for a Unit or Command hand card, but built
+// directly (these modals show cards that are NOT in hand yet, mid-choice). Units route through
+// buildUnitCardInnerHtml (ui.js) so keyword explanations and full rules text (including a
+// generated Craft candidate's actual drawback text) show on hover, exactly like the normal hand —
+// previously this only showed name/cost/stats/bare-keyword-name, the reported gap. `tappable`
+// (true here) marks the info pips as click/focus-toggleable so a touch or keyboard user can
+// inspect a candidate without that click also confirming the pick (see buildUnitCardInnerHtml's
+// own comment and the floating-tip wiring below for how the toggle avoids bubbling into select).
 function buildPreviewCardDiv(card) {
   const cardDiv = document.createElement('div');
   cardDiv.className = 'hand-card mulligan-card';
   if (card.type === 'unit') {
-    cardDiv.innerHTML = `<div class="hc-header">${card.name}</div><div class="hc-cost">${card.cost} ⛽</div><div class="hc-type">${card.cls}</div><div class="hc-dirs"><div></div><div>${card.n}</div><div></div><div>${card.w}</div><div style="color:#444">·</div><div>${card.e}</div><div></div><div>${card.s}</div><div></div></div>${card.keyword ? `<div class="bc-keyword-row"><span class="bc-kw-tag">${card.keyword}</span></div>` : ''}`;
+    cardDiv.innerHTML = buildUnitCardInnerHtml(card, { tappable: true });
   } else if (card.type === 'command') {
     cardDiv.classList.add('hc-command');
     cardDiv.innerHTML = `<div class="hc-header">${card.name}</div><div class="hc-cost">${card.cost} ⛽</div><div class="hc-type hc-command-label">COMMAND</div><div class="hc-effect">${card.effect || ''}</div>`;
-  } else if (card.type === 'mission') {
-    cardDiv.classList.add('hc-mission');
-    cardDiv.innerHTML = `<div class="hc-header">${card.name}</div><div class="hc-cost">${card.cost} ⛽</div><div class="hc-type hc-mission-label">MISSION</div><div class="hc-req">${card.req || ''}</div><div class="hc-reward-strip"><div class="hc-reward-label">REWARD</div><div class="hc-reward-text">${card.reward || card.effect || ''}</div></div>`;
   } else {
     cardDiv.innerHTML = `<div class="hc-header">${card?.name ?? '?'}</div>`;
   }
@@ -3991,8 +4556,8 @@ function buildPreviewCardDiv(card) {
 
 // ── Forward Observer modal ────────────────────────────────────────────────────
 
-// Shared by the 3 "look at N cards from your deck" modals (Forward Observer, Radio
-// Operator, Field Reserves) — each builds one .fo-slot per drawn card the same way and only
+// Shared by the 2 "look at N cards from your deck" modals (Forward Observer and Field
+// Reserves) — each builds one .fo-slot per drawn card the same way and only
 // differs in what buttons a slot gets and how picking one resolves. `buildExtras(slot, card,
 // cardId, i)` appends whatever's specific to that modal onto the freshly-built slot.
 function renderDeckPeekSlots(containerId, drawn, buildExtras) {
@@ -4048,7 +4613,6 @@ function updateFOButtons() {
 }
 
 function confirmFO() {
-  document.getElementById('fo-modal').style.display = 'none';
   const keepId   = foCards.find(id => foAssignments[id] === 'keep');
   const topId    = foCards.find(id => foAssignments[id] === 'top');
   const bottomId = foCards.find(id => foAssignments[id] === 'bottom'); // undefined when only 2 were drawn (doc 01 §27 — no bottom instruction target)
@@ -4060,40 +4624,22 @@ function confirmFO() {
   const topName    = CARD_BY_ID[topId]?.name    ?? '?';
   const log = [`Forward Observer: kept ${keepName} · ${topName} → top` + (bottomId !== undefined ? ` · ${CARD_BY_ID[bottomId]?.name ?? '?'} → bottom` : '')];
   const rs = applyRuthlessStrategistIfPresent(s, foPlayer);
-  commitState(rs.state, [...log, ...rs.log]);
+  // Found 2026-09-09: used to hide the modal and clear foCards/foAssignments unconditionally,
+  // even when sync was paused and commitState silently no-op'd — the already-paid pick was
+  // just lost with no way back. Leave the modal open (and the tracking vars intact) on failure
+  // so the player can retry the same Confirm once reconnected.
+  if (!commitState(rs.state, [...log, ...rs.log])) return;
+  document.getElementById('fo-modal').style.display = 'none';
+  clearPinnedTip();
   checkWin();
   foCards = [];
   foAssignments = {};
+  // commitState's own redraw() fired while the modal was still open (hasBlockingModal made
+  // turn-readiness/highlights report "pending"); redraw again now that it's actually closed.
+  redraw();
 }
 
 document.getElementById('fo-confirm').addEventListener('click', confirmFO);
-
-// ── Radio Operator modal (111) ────────────────────────────────────────────────
-// Only 2 cards and a binary choice, so it resolves on a single click — no separate
-// Confirm button, unlike Forward Observer's 3-way keep/top/bottom assignment.
-let radioOpPlayer = null;
-
-function showRadioOperatorModal(drawn, player) {
-  radioOpPlayer = player;
-  renderDeckPeekSlots('radio-op-cards', drawn, (slot, card, cardId) => {
-    const btn = document.createElement('button');
-    btn.className = 'fo-pos-btn fo-top';
-    btn.textContent = 'PUT ON TOP';
-    btn.addEventListener('click', () => confirmRadioOperator(cardId, drawn.find(id => id !== cardId)));
-    slot.appendChild(btn);
-  });
-  document.getElementById('radio-op-modal').style.display = 'flex';
-}
-
-function confirmRadioOperator(topId, bottomId) {
-  document.getElementById('radio-op-modal').style.display = 'none';
-  const ps = state[radioOpPlayer];
-  const s = { ...state, [radioOpPlayer]: { ...ps, deck: [topId, ...ps.deck, bottomId] } };
-  const topName = CARD_BY_ID[topId]?.name ?? '?';
-  const bottomName = CARD_BY_ID[bottomId]?.name ?? '?';
-  commitState(s, [`Radio Operator: ${topName} → top · ${bottomName} → bottom`]);
-  radioOpPlayer = null;
-}
 
 // ── Field Reserves modal (125) ────────────────────────────────────────────────
 // Look at top 4; may take ONE Unit into hand; the rest go to the bottom, original order
@@ -4117,7 +4663,6 @@ function showFieldReservesModal(drawn, player) {
 }
 
 function confirmFieldReserves(takenId) {
-  document.getElementById('field-reserves-modal').style.display = 'none';
   const ps = state[fieldReservesPlayer];
   const rest = fieldReservesCards.filter(id => id !== takenId);
   const hand = takenId != null ? [...ps.hand, takenId] : ps.hand;
@@ -4125,9 +4670,16 @@ function confirmFieldReserves(takenId) {
   const msg = takenId != null
     ? `Field Reserves: took ${CARD_BY_ID[takenId]?.name} — ${rest.length} card(s) to bottom`
     : `Field Reserves: took nothing — 4 card(s) to bottom`;
-  commitState(s, [msg]);
+  // Same fix as confirmFO: don't hide the modal or drop the pending cards until the write
+  // actually lands, so a sync pause doesn't silently lose the pick.
+  if (!commitState(s, [msg])) return;
+  document.getElementById('field-reserves-modal').style.display = 'none';
+  clearPinnedTip();
   fieldReservesCards = [];
   fieldReservesPlayer = null;
+  // Same fix as confirmFO: redraw again now the modal is actually closed — commitState's own
+  // redraw() ran while it was still open and under-reported turn-readiness/highlights.
+  redraw();
 }
 
 document.getElementById('field-reserves-skip').addEventListener('click', () => confirmFieldReserves(null));
@@ -4148,10 +4700,9 @@ function showCraftPickerModal(role) {
     const slot = document.createElement('div');
     slot.className = 'fo-slot';
     const preview = buildPreviewCardDiv(card);
-    // Found 2026-09-02: the preview card had no click handler, only the "CRAFT THIS" button
-    // did — clicking the card itself (the natural move, since every other card-selection UI in
-    // this game, hand cards and hero-deploy cards, IS directly clickable) silently did nothing,
-    // leaving the modal open with the activation cost already spent and nothing added to hand.
+    // The separate button and the card preview are both valid choices. This matches every other
+    // card-selection surface and prevents a natural click on the preview from looking accepted
+    // while leaving the already-paid modal unresolved.
     preview.style.cursor = 'pointer';
     preview.addEventListener('click', () => confirmCraftPick(card.id));
     slot.appendChild(preview);
@@ -4166,9 +4717,7 @@ function showCraftPickerModal(role) {
 }
 
 function confirmCraftPick(chosenId) {
-  document.getElementById('craft-picker-modal').style.display = 'none';
   const role = craftPickerRole;
-  craftPickerRole = null;
   const ps = state[role];
   const chosen = CARD_BY_ID[chosenId];
   // doc 02 Q024: a full hand sends the generated card to Discard Pile instead.
@@ -4182,7 +4731,72 @@ function confirmCraftPick(chosenId) {
     generatedCards: { ...(state.generatedCards ?? {}), [chosenId]: chosen },
   };
   const log = [`Chief Aircraft Engineer: Crafted ${chosen.name} (${chosen.n}/${chosen.e}/${chosen.s}/${chosen.w}, ${chosen.keyword}) — next activation costs ${nextCraftCost(s[role])}`];
-  commitState(s, log);
+  // Same fix as confirmFO/confirmFieldReserves: keep the modal open and craftPickerRole set
+  // until the write actually lands, so a sync pause doesn't silently lose the crafted card.
+  if (!commitState(s, log)) return;
+  document.getElementById('craft-picker-modal').style.display = 'none';
+  clearPinnedTip();
+  craftPickerRole = null;
+  // Same fix as confirmFO/confirmFieldReserves: redraw again now the modal is actually closed —
+  // commitState's own redraw() ran while it was still open and under-reported turn-readiness.
+  redraw();
+}
+
+// ── Quartermaster picker modal (Quartermaster General, H01) ────────────────────
+// Doc 03 / 2026-09 balance pass: "look at 3 random cards from your deck, choose 1 to put into
+// your hand; the others remain in the deck." Fuel and the once-per-turn activation lock are
+// already committed by tryActivateHero before this modal opens (see the H01 special case
+// there) — this only resolves which sampled card actually leaves the deck. Candidates are
+// tracked by deck INDEX (see sampleRandomFromDeck/resolveQuartermasterPick, combat.js), not
+// card id, since two of the three samples can be the same printed card.
+let quartermasterRole = null;
+let quartermasterCandidates = []; // [{index, cardId}, ...] snapshotted when the modal opened
+
+function showQuartermasterModal(role, candidates) {
+  quartermasterRole = role;
+  quartermasterCandidates = candidates;
+  const container = document.getElementById('quartermaster-cards');
+  container.innerHTML = '';
+  candidates.forEach(({ index, cardId }) => {
+    const card = CARD_BY_ID[cardId];
+    const slot = document.createElement('div');
+    slot.className = 'fo-slot';
+    const preview = buildPreviewCardDiv(card);
+    // Same dual-input convention as Craft/FO/Field Reserves: the preview itself and a dedicated
+    // button are both valid picks, so a natural click on the card doesn't look accepted while
+    // leaving the already-paid modal unresolved.
+    preview.style.cursor = 'pointer';
+    preview.addEventListener('click', () => confirmQuartermasterPick(index));
+    slot.appendChild(preview);
+    const btn = document.createElement('button');
+    btn.className = 'fo-pos-btn fo-top';
+    btn.textContent = 'TAKE THIS';
+    btn.addEventListener('click', () => confirmQuartermasterPick(index));
+    slot.appendChild(btn);
+    container.appendChild(slot);
+  });
+  document.getElementById('quartermaster-modal').style.display = 'flex';
+}
+
+function confirmQuartermasterPick(pickedIndex) {
+  const role = quartermasterRole;
+  const ps = state[role];
+  const chosenId = ps.deck[pickedIndex];
+  const chosen = CARD_BY_ID[chosenId];
+  const s = { ...state, [role]: resolveQuartermasterPick(ps, pickedIndex) };
+  const others = quartermasterCandidates.length - 1;
+  const log = [`Quartermaster General: took ${chosen?.name ?? '?'} — ${others} other sampled card${others === 1 ? '' : 's'} stay in the deck`];
+  // Same fix as confirmFO/confirmFieldReserves/confirmCraftPick: keep the modal open and
+  // quartermasterRole set until the write actually lands, so a sync pause doesn't silently lose
+  // the pick.
+  if (!commitState(s, log)) return;
+  document.getElementById('quartermaster-modal').style.display = 'none';
+  clearPinnedTip();
+  quartermasterRole = null;
+  quartermasterCandidates = [];
+  // Same fix as confirmFO/confirmFieldReserves/confirmCraftPick: redraw again now the modal is
+  // actually closed — commitState's own redraw() ran while it was still open.
+  redraw();
 }
 
 // ── Rotate direction modal (Change Formation 124 / Field Engineer 91) ──────────
@@ -4198,10 +4812,8 @@ function showRotateDirectionModal(ctx) {
 }
 
 function confirmRotateDirection(direction) { // direction: 1 = clockwise, -1 = counter-clockwise
-  document.getElementById('rotate-direction-modal').style.display = 'none';
   if (!pendingRotation) return;
-  const { kind, targetKey, cardName, s, log, role, heroId, objectiveKey } = pendingRotation;
-  pendingRotation = null;
+  const { kind, targetKey, cardName, s, log, role, heroId, objectiveKey, col } = pendingRotation;
 
   const unit = s.board[targetKey];
   const newRotation = (((unit.rotation || 0) + direction * 90) % 360 + 360) % 360;
@@ -4224,7 +4836,12 @@ function confirmRotateDirection(direction) { // direction: 1 = clockwise, -1 = c
   // Artillery Position L1 (Objective player-choice pick, 2026-09-01) — the Unit was already
   // chosen via a board click (resolveObjectivePickClick); this modal only ever supplies the
   // direction. Continues the paused Objective-resolution chain instead of committing directly.
+  // pendingObjectivePick lives in shared `state` itself (not just a local var), so unlike the
+  // command/hero path below, this one doesn't need the same guard — the mandatory pick survives
+  // even if resumeObjectiveResolution's own commit fails, whereas pendingRotation is local-only.
   if (kind === 'objective') {
+    document.getElementById('rotate-direction-modal').style.display = 'none';
+    pendingRotation = null;
     resumeObjectiveResolution(next, role, objectiveKey, newLog);
     return;
   }
@@ -4235,7 +4852,20 @@ function confirmRotateDirection(direction) { // direction: 1 = clockwise, -1 = c
     next = rs.state;
     finalLog = [...newLog, ...rs.log];
   }
-  commitState(next, finalLog);
+  // Found 2026-09-09 (live-tested via a forced sync conflict): same fix as
+  // confirmFO/confirmFieldReserves/confirmCraftPick — don't hide the modal or drop
+  // pendingRotation until the write actually lands. Rotate's Fuel spend and target pick
+  // already happened locally before this modal even opened, with preCommandState cleared at
+  // that point (see the C16 case in playInstantCommand) — so unlike those three, there's no
+  // Cancel-refund fallback left if this commit silently no-ops; leaving the modal open is the
+  // only way back for the player once reconnected.
+  // heroActivationKey only for kind === 'hero' (H11) — a plain Command/Objective rotate never
+  // activated a Hero, so it must never glow a Hero Zone (Found 2026-09-XX, GPT review: H11's
+  // rotate previously never passed heroActivationKey at all, at its only commit point).
+  const heroActivationKey = kind === 'hero' ? `${role}-${col}` : undefined;
+  if (!commitState(next, finalLog, undefined, undefined, heroActivationKey)) return;
+  document.getElementById('rotate-direction-modal').style.display = 'none';
+  pendingRotation = null;
   checkWin();
 }
 
@@ -4477,3 +5107,18 @@ document.getElementById('debug-turn-go').addEventListener('click', () => {
   const { state: newState, log } = debugSkipToTurn(state, turn);
   commitState(newState, log);
 });
+
+// Debug/testing hook only — same "no gameplay effect" contract as window.__SIGNAL_DEBUG__ above:
+// nothing here is read back into game state by any normal code path. Exposes the receiving half
+// of the animation-event system (see buildLastEvent/commitState/receiveRemoteState) so a
+// regression test can feed a synthetic "remote" snapshot directly — duplicate delivery, a
+// coalesced batch of several distinct events, a forced-recovery adoption followed by a genuine
+// new one — without needing to choreograph exact real-network timing across two live Firebase
+// clients for every scenario. `getState`/`getConsumedEventIds` let a test read back the current
+// state and which event ids this client already considers seen, for setting up a realistic
+// "already consumed this one, here's another" starting point.
+window.__SIGNAL_TEST_HOOKS__ = {
+  receiveRemoteState,
+  getState: () => state,
+  getConsumedEventIds: () => [...consumedEventIds],
+};
